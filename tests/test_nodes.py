@@ -1,12 +1,15 @@
 """Tests for graph nodes.
 
-These tests hit real APIs — requires valid API keys in .env.
+API tests hit real APIs — requires valid API keys in .env.
+Unit tests (reflect routing, formatting) run without API calls.
 """
 
 import pytest
-from langchain_core.messages import HumanMessage
+from langchain_core.messages import HumanMessage, ToolMessage
 
+from deep_research.models import Reflection
 from deep_research.nodes.brief import write_research_brief
+from deep_research.nodes.reflect import _extract_tool_results, _format_reflection
 from deep_research.nodes.report import final_report_generation
 from deep_research.tools.registry import get_all_tools
 
@@ -18,6 +21,8 @@ def sample_state():
         "research_brief": "",
         "notes": "",
         "final_report": "",
+        "research_iterations": 0,
+        "last_reflection": "",
     }
 
 
@@ -66,3 +71,58 @@ async def test_tool_registry_returns_tools():
     tools = await get_all_tools(config={"configurable": {}})
     assert len(tools) > 0
     assert tools[0].name == "tavily_search"
+
+
+# --- Reflect node unit tests (no API calls) ---
+
+
+def test_extract_tool_results():
+    """Extracts content from ToolMessages, skips others."""
+    state = {
+        "messages": [
+            HumanMessage(content="search for X"),
+            ToolMessage(content="Result A", name="tavily_search", tool_call_id="1"),
+            ToolMessage(content="Result B", name="tavily_search", tool_call_id="2"),
+            ToolMessage(content="", name="tavily_search", tool_call_id="3"),
+        ],
+        "research_brief": "",
+        "notes": "",
+        "final_report": "",
+        "research_iterations": 0,
+        "last_reflection": "",
+    }
+    result = _extract_tool_results(state)
+    assert "Result A" in result
+    assert "Result B" in result
+    assert result.count("Result") == 2  # empty ToolMessage skipped
+
+
+def test_format_reflection_with_all_fields():
+    """Formats reflection with missing_info, contradictions, and next_queries."""
+    reflection = Reflection(
+        key_findings=["Found X"],
+        missing_info=["No data on Y", "Missing Z"],
+        contradictions=["Source A says X, Source B says not X"],
+        knowledge_state="partial",
+        should_continue=True,
+        next_queries=["search for Y", "search for Z"],
+    )
+    result = _format_reflection(reflection)
+    assert "No data on Y" in result
+    assert "Missing Z" in result
+    assert "Source A says X" in result
+    assert "search for Y" in result
+
+
+def test_format_reflection_minimal():
+    """Formats reflection without contradictions or next_queries."""
+    reflection = Reflection(
+        key_findings=["Found X"],
+        missing_info=["No data on Y"],
+        knowledge_state="insufficient",
+        should_continue=True,
+    )
+    result = _format_reflection(reflection)
+    assert "No data on Y" in result
+    assert "Contradictions" not in result
+    assert "next queries" not in result
