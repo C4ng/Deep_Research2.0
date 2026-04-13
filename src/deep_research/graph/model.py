@@ -13,5 +13,5 @@ string. No code changes needed here.
 from langchain.chat_models import init_chat_model
 
 configurable_model = init_chat_model(
-    configurable_fields=("model", "max_tokens", "api_key", "temperature"),
+    configurable_fields=("model", "max_tokens", "api_key", "temperature", "thinking_budget"),
 )

@@ -20,6 +20,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
+from langsmith.run_helpers import get_current_run_tree
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
@@ -53,15 +54,19 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
             "No tools available for research. Check search API configuration."
         )
 
+    model_config = {
+        "model": configurable.research_model,
+        "max_tokens": configurable.research_model_max_tokens,
+        "temperature": configurable.research_model_temperature,
+    }
+    if configurable.research_model_thinking_budget is not None:
+        model_config["thinking_budget"] = configurable.research_model_thinking_budget
+
     model = (
         configurable_model
         .bind_tools(tools)
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
-        .with_config(configurable={
-            "model": configurable.research_model,
-            "max_tokens": configurable.research_model_max_tokens,
-            "temperature": configurable.research_model_temperature,
-        })
+        .with_config(configurable=model_config)
     )
 
     # On first entry, set up system prompt + topic
@@ -77,7 +82,11 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
             HumanMessage(content=f"Please research the following topic:\n\n{state['research_brief']}"),
         ] + messages
 
+    logger.info("Researcher invoking LLM (%d messages in context)", len(messages))
     response = await model.ainvoke(messages)
+    tool_count = len(response.tool_calls) if response.tool_calls else 0
+    logger.info("Researcher LLM responded: %d tool calls, %d chars text",
+                tool_count, len(response.text) if response.text else 0)
 
     return Command(
         goto="researcher_tools",
@@ -99,12 +108,32 @@ async def researcher_tools(
 
     # No tool calls — model produced a final text response
     if not most_recent or not most_recent.tool_calls:
-        notes = most_recent.content if most_recent else ""
+        # Use .text to strip provider-specific extras (e.g. Gemini signatures)
+        notes = most_recent.text if most_recent else ""
+        if not notes:
+            # Model returned empty text — likely thinking tokens consumed entire
+            # output budget. Fall back to raw tool results so report node still
+            # has material to work with.
+            logger.warning(
+                "Researcher produced empty summary (possible thinking budget issue). "
+                "Falling back to raw tool results."
+            )
+            notes = "\n\n".join(
+                m.content for m in messages
+                if isinstance(m, ToolMessage) and m.content
+            )
+            # Flag in LangSmith trace for human review
+            rt = get_current_run_tree()
+            if rt:
+                rt.metadata["fallback"] = "empty_researcher_summary"
         return Command(goto="__end__", update={"notes": notes})
 
     # Execute all tool calls in parallel
     tools = await get_all_tools(config)
     tools_by_name = {t.name: t for t in tools}
+
+    tool_names = [tc["name"] for tc in most_recent.tool_calls if tc["name"] in tools_by_name]
+    logger.info("Executing %d tool calls in parallel: %s", len(tool_names), tool_names)
 
     tool_tasks = [
         _execute_tool_safely(
@@ -130,7 +159,7 @@ async def researcher_tools(
     )
     if tool_call_rounds >= configurable.max_tool_call_rounds:
         logger.warning("Researcher hit max tool rounds (%d)", configurable.max_tool_call_rounds)
-        return Command(goto="__end__", update={"messages": tool_messages, "notes": most_recent.content or ""})
+        return Command(goto="__end__", update={"messages": tool_messages, "notes": most_recent.text or ""})
 
     return Command(goto="researcher", update={"messages": tool_messages})
 

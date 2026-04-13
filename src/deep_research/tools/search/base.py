@@ -59,15 +59,19 @@ class BaseSearchTool(ABC):
         from deep_research.prompts import summarize_webpage_prompt
 
         configurable = Configuration.from_runnable_config(self._config)
+        model_config = {
+            "model": configurable.summarization_model,
+            "max_tokens": configurable.summarization_model_max_tokens,
+            "temperature": configurable.summarization_model_temperature,
+        }
+        if configurable.summarization_model_thinking_budget is not None:
+            model_config["thinking_budget"] = configurable.summarization_model_thinking_budget
+
         summary_model = (
             configurable_model
             .with_structured_output(WebpageSummary)
             .with_retry(stop_after_attempt=3)
-            .with_config(configurable={
-                "model": configurable.summarization_model,
-                "max_tokens": configurable.summarization_model_max_tokens,
-                "temperature": configurable.summarization_model_temperature,
-            })
+            .with_config(configurable=model_config)
         )
 
         prompt = summarize_webpage_prompt.format(

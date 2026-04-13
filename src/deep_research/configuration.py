@@ -36,6 +36,19 @@ class Configuration(BaseModel):
         default=0.5,
         description="Temperature for research model — moderate for query exploration",
     )
+    research_model_thinking_budget: Optional[int] = Field(
+        default=4096,
+        description=(
+            "Max thinking/reasoning tokens for the research model. "
+            "Set to None to skip (for providers that don't support it). "
+            "Reasoning models (Gemini 2.5+) use internal chain-of-thought that "
+            "counts against max_tokens — without a budget, thinking can starve output."
+        ),
+    )
+    # TODO: Add a model config resolver that builds provider-aware config dicts.
+    # Currently thinking_budget is conditionally passed (only when not None),
+    # but a proper resolver would handle all provider-specific params in one place
+    # when we add OpenAI/Anthropic support.
     summarization_model: str = Field(
         default="google_genai:gemini-2.5-flash-lite",
         description="Model for summarizing webpage content (cheap, mechanical extraction)",
@@ -47,6 +60,13 @@ class Configuration(BaseModel):
     summarization_model_temperature: float = Field(
         default=0.0,
         description="Temperature for summarization — low for factual extraction",
+    )
+    summarization_model_thinking_budget: Optional[int] = Field(
+        default=0,
+        description=(
+            "Max thinking tokens for summarization. Default 0 (disabled) — "
+            "summarization is mechanical extraction, reasoning wastes tokens."
+        ),
     )
 
     # Search configuration
