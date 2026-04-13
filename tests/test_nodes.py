@@ -99,9 +99,9 @@ def test_extract_tool_results():
 
 
 def test_format_reflection_with_all_fields():
-    """Formats reflection with missing_info, contradictions, and next_queries."""
+    """Formats reflection with key_findings, missing_info, contradictions, and next_queries."""
     reflection = Reflection(
-        key_findings=["Found X"],
+        key_findings=["Found X", "Found W"],
         missing_info=["No data on Y", "Missing Z"],
         contradictions=["Source A says X, Source B says not X"],
         knowledge_state="partial",
@@ -109,6 +109,8 @@ def test_format_reflection_with_all_fields():
         next_queries=["search for Y", "search for Z"],
     )
     result = _format_reflection(reflection)
+    assert "Found X" in result
+    assert "Found W" in result
     assert "No data on Y" in result
     assert "Missing Z" in result
     assert "Source A says X" in result

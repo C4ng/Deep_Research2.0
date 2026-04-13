@@ -32,7 +32,9 @@ def _extract_tool_results(state: AgentState) -> str:
 def _format_reflection(reflection: Reflection) -> str:
     """Format a Reflection into a readable string for the researcher."""
     parts = [
-        "Missing information:",
+        "Already covered:",
+        *[f"- {f}" for f in reflection.key_findings],
+        "\nMissing information:",
         *[f"- {info}" for info in reflection.missing_info],
     ]
     if reflection.contradictions:
