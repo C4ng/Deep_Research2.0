@@ -81,8 +81,8 @@ class Configuration(BaseModel):
 
     # Researcher limits
     max_tool_call_rounds: int = Field(
-        default=10,
-        description="Maximum tool-calling rounds per researcher before forced stop",
+        default=3,
+        description="Maximum tool-calling rounds per research iteration before reflecting",
     )
     max_structured_output_retries: int = Field(
         default=3,

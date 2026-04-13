@@ -1,14 +1,14 @@
 """Researcher subgraph — searches for information on a given topic.
 
-Split into two nodes:
-- `researcher`: calls the model (one LLM invocation)
-- `researcher_tools`: executes tool calls in parallel, decides routing
+Four nodes in a loop:
+- `researcher`: calls the model (one LLM invocation with tools)
+- `researcher_tools`: executes tool calls in parallel
+- `reflect`: structured reflection — decides continue or stop
+- `compress`: compresses raw tool results into concise notes on exit
 
-These alternate in a loop: researcher → researcher_tools → researcher → ...
-until the model stops calling tools or max rounds are reached.
+Flow: researcher → researcher_tools → reflect → (researcher | compress → END)
 
 Compiled as a subgraph so the main graph treats it as a single node.
-Increment 2 adds structured Reflection and system-controlled routing.
 """
 
 import asyncio
@@ -24,6 +24,8 @@ from langsmith.run_helpers import get_current_run_tree
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
+from deep_research.nodes.compress import compress_research
+from deep_research.nodes.reflect import reflect
 from deep_research.prompts import research_system_prompt
 from deep_research.state import AgentState
 from deep_research.tools.registry import get_all_tools
@@ -44,7 +46,7 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
     """Invoke the research model with tools bound.
 
     Single responsibility: one LLM call. Tool execution and routing
-    are handled by researcher_tools.
+    are handled by researcher_tools and reflect.
     """
     configurable = Configuration.from_runnable_config(config)
     tools = await get_all_tools(config)
@@ -73,14 +75,31 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
     messages = state.get("messages", [])
     has_system = any(isinstance(m, SystemMessage) for m in messages)
     if not has_system:
-        system_prompt = research_system_prompt.format(
-            topic=state["research_brief"],
-            date=datetime.now().strftime("%B %d, %Y"),
-        )
+        system_parts = [
+            research_system_prompt.format(
+                topic=state["research_brief"],
+                date=datetime.now().strftime("%B %d, %Y"),
+            )
+        ]
+
+        # Include reflection guidance if available (from prior reflect round)
+        last_reflection = state.get("last_reflection", "")
+        if last_reflection:
+            system_parts.append(
+                f"\n<prior_reflection>\n{last_reflection}\n</prior_reflection>"
+            )
+
         messages = [
-            SystemMessage(content=system_prompt),
+            SystemMessage(content="\n".join(system_parts)),
             HumanMessage(content=f"Please research the following topic:\n\n{state['research_brief']}"),
         ] + messages
+    else:
+        # Subsequent rounds — append reflection guidance if available
+        last_reflection = state.get("last_reflection", "")
+        if last_reflection:
+            messages = messages + [
+                HumanMessage(content=f"Based on reflection, here is guidance for this round:\n\n{last_reflection}"),
+            ]
 
     logger.info("Researcher invoking LLM (%d messages in context)", len(messages))
     response = await model.ainvoke(messages)
@@ -96,37 +115,20 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
 
 async def researcher_tools(
     state: AgentState, config: RunnableConfig
-) -> Command[Literal["researcher", "__end__"]]:
-    """Execute tool calls in parallel and decide whether to continue.
+) -> Command[Literal["researcher", "reflect"]]:
+    """Execute tool calls in parallel, then route to reflect.
 
-    Routes back to `researcher` if more searching is needed,
-    or to `__end__` when the model is done or max rounds are reached.
+    Routes back to researcher only if the model called tools and
+    max_tool_call_rounds has not been reached (inner tool-calling loop).
+    Otherwise routes to reflect for assessment.
     """
     configurable = Configuration.from_runnable_config(config)
     messages = state.get("messages", [])
     most_recent = messages[-1] if messages else None
 
-    # No tool calls — model produced a final text response
+    # No tool calls — model produced a final text response, let reflect assess
     if not most_recent or not most_recent.tool_calls:
-        # Use .text to strip provider-specific extras (e.g. Gemini signatures)
-        notes = most_recent.text if most_recent else ""
-        if not notes:
-            # Model returned empty text — likely thinking tokens consumed entire
-            # output budget. Fall back to raw tool results so report node still
-            # has material to work with.
-            logger.warning(
-                "Researcher produced empty summary (possible thinking budget issue). "
-                "Falling back to raw tool results."
-            )
-            notes = "\n\n".join(
-                m.content for m in messages
-                if isinstance(m, ToolMessage) and m.content
-            )
-            # Flag in LangSmith trace for human review
-            rt = get_current_run_tree()
-            if rt:
-                rt.metadata["fallback"] = "empty_researcher_summary"
-        return Command(goto="__end__", update={"notes": notes})
+        return Command(goto="reflect")
 
     # Execute all tool calls in parallel
     tools = await get_all_tools(config)
@@ -153,14 +155,16 @@ async def researcher_tools(
         for result, tc in zip(results, most_recent.tool_calls)
     ]
 
-    # Check if we've hit the max rounds
+    # Check if we've hit the max tool call rounds (inner loop safety net)
     tool_call_rounds = sum(
         1 for m in messages if hasattr(m, "tool_calls") and m.tool_calls
     )
     if tool_call_rounds >= configurable.max_tool_call_rounds:
-        logger.warning("Researcher hit max tool rounds (%d)", configurable.max_tool_call_rounds)
-        return Command(goto="__end__", update={"messages": tool_messages, "notes": most_recent.text or ""})
+        logger.warning("Hit max tool call rounds (%d), routing to reflect",
+                       configurable.max_tool_call_rounds)
+        return Command(goto="reflect", update={"messages": tool_messages})
 
+    # More tool calls possible — loop back to researcher for another LLM call
     return Command(goto="researcher", update={"messages": tool_messages})
 
 
@@ -168,5 +172,8 @@ async def researcher_tools(
 researcher_builder = StateGraph(AgentState)
 researcher_builder.add_node("researcher", researcher)
 researcher_builder.add_node("researcher_tools", researcher_tools)
+researcher_builder.add_node("reflect", reflect)
+researcher_builder.add_node("compress", compress_research)
 researcher_builder.add_edge(START, "researcher")
+researcher_builder.add_edge("compress", END)
 researcher_subgraph = researcher_builder.compile()
