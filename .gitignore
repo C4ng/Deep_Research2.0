@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+.venv/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+
+# Environment / secrets
+.env
+
+# Reference materials (not part of the project)
+*_reference/
+DESIGN_REFERENCE.md
+ModiFace MLOps position test.pdf
