@@ -8,19 +8,19 @@ Four nodes in a loop:
 
 Flow: researcher → researcher_tools → reflect → (researcher | compress → END)
 
+No inner loop — each research round gets one LLM call, then reflects.
+The model can call multiple tools in parallel within that one response.
+
 Compiled as a subgraph so the main graph treats it as a single node.
 """
 
 import asyncio
 import logging
 from datetime import datetime
-from typing import Literal
 
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.graph import END, START, StateGraph
-from langgraph.types import Command
-from langsmith.run_helpers import get_current_run_tree
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
@@ -42,11 +42,11 @@ async def _execute_tool_safely(tool, args, config):
         return f"Error executing tool: {e}"
 
 
-async def researcher(state: AgentState, config: RunnableConfig) -> Command[Literal["researcher_tools"]]:
+async def researcher(state: AgentState, config: RunnableConfig) -> dict:
     """Invoke the research model with tools bound.
 
-    Single responsibility: one LLM call. Tool execution and routing
-    are handled by researcher_tools and reflect.
+    Single responsibility: one LLM call. Tool execution is handled
+    by researcher_tools, routing by reflect.
     """
     configurable = Configuration.from_runnable_config(config)
     tools = await get_all_tools(config)
@@ -71,35 +71,37 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
         .with_config(configurable=model_config)
     )
 
-    # On first entry, set up system prompt + topic
+    # Build messages for the LLM call.
+    # System/Human messages are constructed locally (not stored in state),
+    # so we always build them here. On subsequent rounds (after reflection),
+    # drop prior AI/Tool messages — reflection already captured key findings
+    # and the full history stays in state for compress.
     messages = state.get("messages", [])
-    has_system = any(isinstance(m, SystemMessage) for m in messages)
-    if not has_system:
-        system_parts = [
-            research_system_prompt.format(
-                topic=state["research_brief"],
-                date=datetime.now().strftime("%B %d, %Y"),
-            )
+    is_subsequent_round = state.get("research_iterations", 0) > 0
+
+    if is_subsequent_round:
+        messages = [
+            m for m in messages if isinstance(m, HumanMessage)
         ]
 
-        # Include reflection guidance if available (from prior reflect round)
-        last_reflection = state.get("last_reflection", "")
-        if last_reflection:
-            system_parts.append(
-                f"\n<prior_reflection>\n{last_reflection}\n</prior_reflection>"
-            )
+    system_parts = [
+        research_system_prompt.format(
+            topic=state["research_brief"],
+            date=datetime.now().strftime("%B %d, %Y"),
+            max_searches_per_round=configurable.max_searches_per_round,
+        )
+    ]
 
-        messages = [
-            SystemMessage(content="\n".join(system_parts)),
-            HumanMessage(content=f"Please research the following topic:\n\n{state['research_brief']}"),
-        ] + messages
-    else:
-        # Subsequent rounds — append reflection guidance if available
-        last_reflection = state.get("last_reflection", "")
-        if last_reflection:
-            messages = messages + [
-                SystemMessage(content=f"Reflection guidance for this round:\n\n{last_reflection}"),
-            ]
+    last_reflection = state.get("last_reflection", "")
+    if last_reflection:
+        system_parts.append(
+            f"\n<prior_reflection>\n{last_reflection}\n</prior_reflection>"
+        )
+
+    messages = [
+        SystemMessage(content="\n".join(system_parts)),
+        HumanMessage(content=f"Please research the following topic:\n\n{state['research_brief']}"),
+    ] + messages
 
     logger.info("Researcher invoking LLM (%d messages in context)", len(messages))
     response = await model.ainvoke(messages)
@@ -107,28 +109,20 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
     logger.info("Researcher LLM responded: %d tool calls, %d chars text",
                 tool_count, len(response.text) if response.text else 0)
 
-    return Command(
-        goto="researcher_tools",
-        update={"messages": [response]},
-    )
+    return {"messages": [response]}
 
 
-async def researcher_tools(
-    state: AgentState, config: RunnableConfig
-) -> Command[Literal["researcher", "reflect"]]:
+async def researcher_tools(state: AgentState, config: RunnableConfig) -> dict:
     """Execute tool calls in parallel, then route to reflect.
 
-    Routes back to researcher only if the model called tools and
-    max_tool_call_rounds has not been reached (inner tool-calling loop).
-    Otherwise routes to reflect for assessment.
+    Always routes to reflect via edge — no inner loop.
     """
-    configurable = Configuration.from_runnable_config(config)
     messages = state.get("messages", [])
     most_recent = messages[-1] if messages else None
 
-    # No tool calls — model produced a final text response, let reflect assess
+    # No tool calls — model produced a text response, pass through to reflect
     if not most_recent or not most_recent.tool_calls:
-        return Command(goto="reflect")
+        return {}
 
     # Execute all tool calls in parallel
     tools = await get_all_tools(config)
@@ -155,17 +149,7 @@ async def researcher_tools(
         for result, tc in zip(results, most_recent.tool_calls)
     ]
 
-    # Check if we've hit the max tool call rounds (inner loop safety net)
-    tool_call_rounds = sum(
-        1 for m in messages if hasattr(m, "tool_calls") and m.tool_calls
-    )
-    if tool_call_rounds >= configurable.max_tool_call_rounds:
-        logger.warning("Hit max tool call rounds (%d), routing to reflect",
-                       configurable.max_tool_call_rounds)
-        return Command(goto="reflect", update={"messages": tool_messages})
-
-    # More tool calls possible — loop back to researcher for another LLM call
-    return Command(goto="researcher", update={"messages": tool_messages})
+    return {"messages": tool_messages}
 
 
 # Build the researcher subgraph
@@ -175,5 +159,7 @@ researcher_builder.add_node("researcher_tools", researcher_tools)
 researcher_builder.add_node("reflect", reflect)
 researcher_builder.add_node("compress", compress_research)
 researcher_builder.add_edge(START, "researcher")
+researcher_builder.add_edge("researcher", "researcher_tools")
+researcher_builder.add_edge("researcher_tools", "reflect")
 researcher_builder.add_edge("compress", END)
 researcher_subgraph = researcher_builder.compile()

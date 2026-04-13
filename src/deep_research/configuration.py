@@ -29,7 +29,7 @@ class Configuration(BaseModel):
         description="Model for research tasks (reasoning, tool calling, brief generation, report writing)",
     )
     research_model_max_tokens: int = Field(
-        default=8192,
+        default=16384,
         description="Maximum output tokens for the research model",
     )
     research_model_temperature: float = Field(
@@ -37,7 +37,7 @@ class Configuration(BaseModel):
         description="Temperature for research model — moderate for query exploration",
     )
     research_model_thinking_budget: Optional[int] = Field(
-        default=4096,
+        default=8192,
         description=(
             "Max thinking/reasoning tokens for the research model. "
             "Set to None to skip (for providers that don't support it). "
@@ -80,9 +80,9 @@ class Configuration(BaseModel):
     )
 
     # Researcher limits
-    max_tool_call_rounds: int = Field(
+    max_searches_per_round: int = Field(
         default=3,
-        description="Maximum tool-calling rounds per research iteration before reflecting",
+        description="Maximum search tool calls per research round",
     )
     max_research_iterations: int = Field(
         default=3,
