@@ -98,7 +98,7 @@ async def researcher(state: AgentState, config: RunnableConfig) -> Command[Liter
         last_reflection = state.get("last_reflection", "")
         if last_reflection:
             messages = messages + [
-                HumanMessage(content=f"Based on reflection, here is guidance for this round:\n\n{last_reflection}"),
+                SystemMessage(content=f"Reflection guidance for this round:\n\n{last_reflection}"),
             ]
 
     logger.info("Researcher invoking LLM (%d messages in context)", len(messages))
