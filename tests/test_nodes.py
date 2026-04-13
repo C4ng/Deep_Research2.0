@@ -9,6 +9,7 @@ from langchain_core.messages import HumanMessage, ToolMessage
 
 from deep_research.models import Reflection
 from deep_research.nodes.brief import write_research_brief
+from deep_research.nodes.compress import compress_research
 from deep_research.nodes.reflect import _extract_tool_results, _format_reflection
 from deep_research.nodes.report import final_report_generation
 from deep_research.tools.registry import get_all_tools
@@ -126,3 +127,38 @@ def test_format_reflection_minimal():
     assert "No data on Y" in result
     assert "Contradictions" not in result
     assert "next queries" not in result
+
+
+# --- Compress node unit tests (no API calls) ---
+
+
+@pytest.mark.asyncio
+async def test_compress_skips_short_content():
+    """Short tool results are returned as-is without LLM compression."""
+    state = {
+        "messages": [
+            ToolMessage(content="Short result", name="tavily_search", tool_call_id="1"),
+        ],
+        "research_brief": "Test brief",
+        "notes": "",
+        "final_report": "",
+        "research_iterations": 0,
+        "last_reflection": "",
+    }
+    result = await compress_research(state, config={"configurable": {}})
+    assert result["notes"] == "Short result"
+
+
+@pytest.mark.asyncio
+async def test_compress_empty_messages():
+    """No tool results returns empty notes."""
+    state = {
+        "messages": [],
+        "research_brief": "Test brief",
+        "notes": "",
+        "final_report": "",
+        "research_iterations": 0,
+        "last_reflection": "",
+    }
+    result = await compress_research(state, config={"configurable": {}})
+    assert result["notes"] == ""
