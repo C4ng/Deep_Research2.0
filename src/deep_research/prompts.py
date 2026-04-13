@@ -57,6 +57,38 @@ You can call tools in series or parallel within a tool-calling loop.
 </limits>"""
 
 
+final_report_prompt = """\
+Create a comprehensive, well-structured research report based on the
+findings below.
+
+<research_brief>
+{brief}
+</research_brief>
+
+<findings>
+{notes}
+</findings>
+
+Today's date is {date}.
+
+Requirements:
+1. Structure with markdown headings (# title, ## sections, ### subsections).
+2. Include specific facts, data, and insights from the findings.
+3. Reference sources inline using [Title](URL) format.
+4. Be thorough — each section should be substantive, not a brief mention.
+5. End with a ### Sources section listing all referenced URLs.
+6. Write in the same language as the original user query.
+
+Citation rules:
+- Assign each unique URL a sequential citation number [1], [2], [3]...
+- Use inline citations: "According to [1], ..."
+- List all sources at the end:
+  [1] Source Title: URL
+  [2] Source Title: URL
+
+Do not refer to yourself or comment on the writing process."""
+
+
 summarize_webpage_prompt = """\
 Summarize the raw content of a webpage for use by a downstream research agent. \
 Preserve the most important information without losing essential details.

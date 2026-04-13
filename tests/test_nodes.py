@@ -7,6 +7,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from deep_research.nodes.brief import write_research_brief
+from deep_research.nodes.report import final_report_generation
 from deep_research.tools.registry import get_all_tools
 
 
@@ -36,6 +37,27 @@ async def test_write_research_brief_has_structure(sample_state):
     assert "Title:" in brief
     assert "Research Questions:" in brief
     assert "Key Topics:" in brief
+
+
+@pytest.mark.asyncio
+async def test_final_report_generation():
+    """Report node produces a non-empty markdown report from notes."""
+    state = {
+        "messages": [],
+        "research_brief": "Title: Coral Reef Bleaching\n\nResearch Questions:\n- What causes bleaching?",
+        "notes": (
+            "Coral bleaching occurs when water temperatures rise above 1°C "
+            "over the summer maximum for 4+ weeks. The primary cause is climate "
+            "change driving ocean warming. The Great Barrier Reef experienced "
+            "mass bleaching in 2016, 2017, 2020, and 2022.\n"
+            "Source: https://www.gbrmpa.gov.au/the-reef/coral-bleaching"
+        ),
+        "final_report": "",
+    }
+    result = await final_report_generation(state, config={"configurable": {}})
+    assert "final_report" in result
+    assert len(result["final_report"]) > 100
+    assert "#" in result["final_report"]  # has markdown headings
 
 
 @pytest.mark.asyncio
