@@ -59,6 +59,16 @@ class Configuration(BaseModel):
         description="Maximum number of results per search query",
     )
 
+    # Researcher limits
+    max_tool_call_rounds: int = Field(
+        default=10,
+        description="Maximum tool-calling rounds per researcher before forced stop",
+    )
+    max_structured_output_retries: int = Field(
+        default=3,
+        description="Maximum retries for structured output and model calls",
+    )
+
     # API keys — loaded from env via dotenv, not hardcoded
     tavily_api_key: str = Field(
         default="",

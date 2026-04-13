@@ -7,6 +7,7 @@ import pytest
 from langchain_core.messages import HumanMessage
 
 from deep_research.nodes.brief import write_research_brief
+from deep_research.tools.registry import get_all_tools
 
 
 @pytest.fixture
@@ -35,3 +36,11 @@ async def test_write_research_brief_has_structure(sample_state):
     assert "Title:" in brief
     assert "Research Questions:" in brief
     assert "Key Topics:" in brief
+
+
+@pytest.mark.asyncio
+async def test_tool_registry_returns_tools():
+    """Tool registry returns at least one tool with default config."""
+    tools = await get_all_tools(config={"configurable": {}})
+    assert len(tools) > 0
+    assert tools[0].name == "tavily_search"
