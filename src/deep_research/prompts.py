@@ -89,6 +89,67 @@ Citation rules:
 Do not refer to yourself or comment on the writing process."""
 
 
+reflection_prompt = """\
+You are assessing the progress of a research task. Today's date is {date}.
+
+<research_brief>
+{research_brief}
+</research_brief>
+
+<findings>
+{findings}
+</findings>
+
+<instructions>
+1. Compare the findings against the research brief — what has been answered?
+2. Identify specific gaps that remain unanswered.
+3. Note any contradictions between sources.
+4. Decide whether further searching would be productive.
+</instructions>
+
+<field_criteria>
+knowledge_state:
+- "insufficient": Core research questions are unanswered, or fewer than 2 supporting sources found.
+- "partial": Some questions answered but notable gaps remain.
+- "sufficient": All research questions addressed with supporting sources.
+
+should_continue:
+- false: Last searches returned mostly overlapping information, topic is too niche for web search, or remaining gaps require expertise search cannot provide.
+- true: Concrete gaps exist that targeted queries could fill.
+
+missing_info:
+- Be specific and actionable (e.g. "no data on 2024 market share figures"), not vague ("need more information").
+
+contradictions:
+- Cite which sources disagree and on what specific point.
+
+next_queries:
+- Target the gaps listed in missing_info. Do not repeat prior searches.
+</field_criteria>"""
+
+
+compress_research_prompt = """\
+Compress raw research findings into a concise synthesis for a report-writing agent. \
+Today's date is {date}.
+
+<research_brief>
+{research_brief}
+</research_brief>
+
+<raw_findings>
+{tool_results}
+</raw_findings>
+
+<instructions>
+1. Preserve all citations and source URLs — the report needs them.
+2. Deduplicate overlapping information across sources.
+3. Keep specific facts, data points, statistics, and direct quotes.
+4. Remove boilerplate, navigation text, and irrelevant content.
+5. Group related information together by subtopic.
+6. Target roughly 30% of the original length.
+</instructions>"""
+
+
 summarize_webpage_prompt = """\
 Summarize the raw content of a webpage for use by a downstream research agent. \
 Preserve the most important information without losing essential details.
