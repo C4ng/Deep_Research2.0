@@ -4,6 +4,28 @@ All prompts live here — not scattered in node or tool code.
 Grows incrementally as nodes are added.
 """
 
+research_brief_prompt = """\
+You will be given messages from a user requesting research on a topic.
+Transform these into a structured research brief that will guide the
+research process.
+
+<messages>
+{messages}
+</messages>
+
+Today's date is {date}.
+
+Guidelines:
+1. Extract the core research question and break it into specific sub-questions.
+2. Identify key topics and subtopics that need investigation.
+3. Preserve all user-specified constraints, preferences, and context.
+4. If the user mentions specific sources or domains, include them.
+5. Do not invent requirements the user did not state — leave unspecified
+   dimensions open rather than assuming.
+6. Phrase the brief from the user's perspective.
+7. Be specific and detailed — this brief is the sole input the researcher sees."""
+
+
 summarize_webpage_prompt = """\
 Summarize the raw content of a webpage for use by a downstream research agent. \
 Preserve the most important information without losing essential details.
