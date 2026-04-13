@@ -94,25 +94,57 @@ These are shared data contracts — not tools, not state. Clean separation.
 
 ---
 
-### Step 5 — Model helper
+### Step 5 — Configurable model
 
-The model provider abstraction — one function, one provider for now.
+Shared deferred model factory using LangChain's `init_chat_model` pattern.
 
 **Files created**:
 ```
-src/deep_research/helpers/__init__.py
-src/deep_research/helpers/model.py
+src/deep_research/graph/__init__.py
+src/deep_research/graph/model.py
 ```
 
 **What it contains**:
 ```python
-def get_model(model_name: str, *, max_tokens: int | None = None, **kwargs) -> BaseChatModel
-```
-- Uses `langchain.chat_models.init_chat_model()` under the hood
-- For Increment 1, just wraps the call. Later increments add provider routing, API key lookup per provider.
-- Reads API key from configuration/env
+from langchain.chat_models import init_chat_model
 
-**Verify**: `get_model("google_genai:gemini-2.0-flash")` returns a callable model. A simple `.invoke()` test confirms Gemini connectivity.
+configurable_model = init_chat_model(
+    "google_genai/gemini-2.0-flash",           # default fallback
+    configurable_fields=("model", "max_tokens", "api_key", "temperature"),
+)
+```
+
+**Why this pattern** (instead of a `get_model()` helper):
+- One shared object, configured per-use via `.with_config()`
+- Chains naturally with `.bind_tools()`, `.with_structured_output()`, `.with_retry()`
+- Provider swapping is just a string change: `"google_genai:gemini-2.0-flash"` → `"anthropic:claude-sonnet-4-20250514"`
+- `temperature` added beyond reference — gives per-role control (low for summarization, moderate for research)
+
+**How nodes use it**:
+```python
+# In researcher node
+research_model = (
+    configurable_model
+    .bind_tools(tools)
+    .with_retry(stop_after_attempt=3)
+    .with_config({"model": config.research_model, "temperature": config.research_model_temperature, ...})
+)
+
+# In tavily search — cheap model for webpage summarization
+summarization_model = (
+    configurable_model
+    .with_structured_output(WebpageSummary)
+    .with_retry(stop_after_attempt=3)
+    .with_config({"model": config.summarization_model, "temperature": 0.0, ...})
+)
+```
+
+**Other LangChain Runnable patterns to use later**:
+- `.with_retry()` — already using for structured output (Increment 1)
+- `.with_fallbacks([fallback_model])` — automatic failover on rate limits (Increment 5+)
+- `.configurable_alternatives()` — swap entire implementations at runtime; considered but our ABC inheritance is cleaner for search tool swapping
+
+**Verify**: `configurable_model.with_config({"model": "google_genai/gemini-2.0-flash"}).invoke("hello")` returns a response.
 
 ---
 

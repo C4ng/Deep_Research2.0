@@ -1,0 +1,79 @@
+"""Configuration management for the Deep Research system."""
+
+import os
+from enum import Enum
+from typing import Any, Optional
+
+from dotenv import load_dotenv
+from langchain_core.runnables import RunnableConfig
+from pydantic import BaseModel, Field
+
+load_dotenv()
+
+
+class SearchAPI(Enum):
+    """Available search API providers."""
+
+    TAVILY = "tavily"
+
+
+class Configuration(BaseModel):
+    """Main configuration for the Deep Research agent.
+
+    Grows incrementally — this is the minimal version for Increment 1.
+    """
+
+    # Model configuration
+    research_model: str = Field(
+        default="google_genai/gemini-3.1-flash",
+        description="Model for research tasks (reasoning, tool calling, brief generation, report writing)",
+    )
+    research_model_max_tokens: int = Field(
+        default=8192,
+        description="Maximum output tokens for the research model",
+    )
+    research_model_temperature: float = Field(
+        default=0.5,
+        description="Temperature for research model — moderate for query exploration",
+    )
+    summarization_model: str = Field(
+        default="google_genai/gemini-3.1-flash-lite",
+        description="Model for summarizing webpage content (cheap, mechanical extraction)",
+    )
+    summarization_model_max_tokens: int = Field(
+        default=4096,
+        description="Maximum output tokens for the summarization model",
+    )
+    summarization_model_temperature: float = Field(
+        default=0.0,
+        description="Temperature for summarization — low for factual extraction",
+    )
+
+    # Search configuration
+    search_api: SearchAPI = Field(
+        default=SearchAPI.TAVILY,
+        description="Search API provider to use",
+    )
+    max_search_results: int = Field(
+        default=5,
+        description="Maximum number of results per search query",
+    )
+
+    @classmethod
+    def from_runnable_config(
+        cls, config: Optional[RunnableConfig] = None
+    ) -> "Configuration":
+        """Create a Configuration from a LangGraph RunnableConfig.
+
+        Resolution order: environment variables > runtime config > defaults.
+        """
+        configurable = config.get("configurable", {}) if config else {}
+        values: dict[str, Any] = {}
+        for field_name in cls.model_fields:
+            env_val = os.environ.get(field_name.upper())
+            config_val = configurable.get(field_name)
+            if env_val is not None:
+                values[field_name] = env_val
+            elif config_val is not None:
+                values[field_name] = config_val
+        return cls(**values)
