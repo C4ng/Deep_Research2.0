@@ -59,6 +59,12 @@ class Configuration(BaseModel):
         description="Maximum number of results per search query",
     )
 
+    # API keys — loaded from env via dotenv, not hardcoded
+    tavily_api_key: str = Field(
+        default="",
+        description="Tavily API key (loaded from TAVILY_API_KEY env var)",
+    )
+
     @classmethod
     def from_runnable_config(
         cls, config: Optional[RunnableConfig] = None

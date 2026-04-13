@@ -1,0 +1,30 @@
+"""Prompt templates for the Deep Research system.
+
+All prompts live here — not scattered in node or tool code.
+Grows incrementally as nodes are added.
+"""
+
+summarize_webpage_prompt = """\
+Summarize the raw content of a webpage for use by a downstream research agent. \
+Preserve the most important information without losing essential details.
+
+Guidelines:
+1. Preserve the main topic or purpose of the webpage.
+2. Retain key facts, statistics, and data points.
+3. Keep important quotes from credible sources.
+4. Maintain chronological order for time-sensitive content.
+5. Preserve lists or step-by-step instructions if present.
+6. Include relevant dates, names, and locations.
+7. Aim for about 25-30% of the original length.
+
+Content types:
+- News articles: focus on who, what, when, where, why, how.
+- Scientific content: preserve methodology, results, conclusions.
+- Opinion pieces: maintain main arguments and supporting points.
+- Product pages: keep key features, specifications, selling points.
+
+Today's date is {date}.
+
+<webpage_content>
+{webpage_content}
+</webpage_content>"""
