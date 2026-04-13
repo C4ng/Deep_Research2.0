@@ -4,6 +4,8 @@ Data contracts shared between nodes, tools, and state.
 Not to be confused with LLM model configuration.
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -36,4 +38,25 @@ class WebpageSummary(BaseModel):
     summary: str = Field(description="Concise summary of the webpage content")
     key_excerpts: str = Field(
         description="Important quotes or data points extracted verbatim"
+    )
+
+
+class Reflection(BaseModel):
+    """Structured reflection after a research round."""
+
+    key_findings: list[str] = Field(description="Specific facts learned this round")
+    missing_info: list[str] = Field(description="Specific gaps still remaining")
+    contradictions: list[str] = Field(
+        default_factory=list,
+        description="Conflicting information between sources",
+    )
+    knowledge_state: Literal["insufficient", "partial", "sufficient"] = Field(
+        description="Overall research completeness",
+    )
+    should_continue: bool = Field(
+        description="Whether further searching is likely to help",
+    )
+    next_queries: list[str] = Field(
+        default_factory=list,
+        description="Targeted queries for the next research round",
     )

@@ -28,3 +28,9 @@ class AgentState(TypedDict):
 
     final_report: str
     """The final markdown report output."""
+
+    research_iterations: int
+    """Reflection cycle count, incremented by the reflect node."""
+
+    last_reflection: str
+    """Serialized Reflection output for the researcher to read on next round."""

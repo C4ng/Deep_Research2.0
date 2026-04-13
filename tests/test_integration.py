@@ -21,6 +21,8 @@ async def test_full_pipeline_produces_report():
             "research_brief": "",
             "notes": "",
             "final_report": "",
+            "research_iterations": 0,
+            "last_reflection": "",
         },
         config={"configurable": {}},
     )
