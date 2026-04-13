@@ -84,6 +84,10 @@ class Configuration(BaseModel):
         default=3,
         description="Maximum tool-calling rounds per research iteration before reflecting",
     )
+    max_research_iterations: int = Field(
+        default=3,
+        description="Maximum reflection-research cycles before forcing exit",
+    )
     max_structured_output_retries: int = Field(
         default=3,
         description="Maximum retries for structured output and model calls",
