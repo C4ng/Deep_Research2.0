@@ -25,7 +25,7 @@ class Configuration(BaseModel):
 
     # Model configuration
     research_model: str = Field(
-        default="google_genai:gemini-3.1-flash",
+        default="google_genai:gemini-2.5-flash",
         description="Model for research tasks (reasoning, tool calling, brief generation, report writing)",
     )
     research_model_max_tokens: int = Field(
@@ -37,7 +37,7 @@ class Configuration(BaseModel):
         description="Temperature for research model — moderate for query exploration",
     )
     summarization_model: str = Field(
-        default="google_genai:gemini-3.1-flash-lite",
+        default="google_genai:gemini-2.5-flash-lite",
         description="Model for summarizing webpage content (cheap, mechanical extraction)",
     )
     summarization_model_max_tokens: int = Field(
