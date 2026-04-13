@@ -1,12 +1,13 @@
-"""Researcher node — searches for information on a given topic.
+"""Researcher subgraph — searches for information on a given topic.
 
-Split into two nodes following the reference pattern:
+Split into two nodes:
 - `researcher`: calls the model (one LLM invocation)
 - `researcher_tools`: executes tool calls in parallel, decides routing
 
 These alternate in a loop: researcher → researcher_tools → researcher → ...
 until the model stops calling tools or max rounds are reached.
 
+Compiled as a subgraph so the main graph treats it as a single node.
 Increment 2 adds structured Reflection and system-controlled routing.
 """
 
@@ -17,6 +18,7 @@ from typing import Literal
 
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
+from langgraph.graph import END, START, StateGraph
 from langgraph.types import Command
 
 from deep_research.configuration import Configuration
@@ -89,8 +91,7 @@ async def researcher_tools(
     """Execute tool calls in parallel and decide whether to continue.
 
     Routes back to `researcher` if more searching is needed,
-    or to `__end__` if the model is done (no tool calls) or
-    max rounds are reached.
+    or to `__end__` when the model is done or max rounds are reached.
     """
     configurable = Configuration.from_runnable_config(config)
     messages = state.get("messages", [])
@@ -124,7 +125,6 @@ async def researcher_tools(
     ]
 
     # Check if we've hit the max rounds
-    # Count how many AI messages with tool calls we've had
     tool_call_rounds = sum(
         1 for m in messages if hasattr(m, "tool_calls") and m.tool_calls
     )
@@ -133,3 +133,11 @@ async def researcher_tools(
         return Command(goto="__end__", update={"messages": tool_messages, "notes": most_recent.content or ""})
 
     return Command(goto="researcher", update={"messages": tool_messages})
+
+
+# Build the researcher subgraph
+researcher_builder = StateGraph(AgentState)
+researcher_builder.add_node("researcher", researcher)
+researcher_builder.add_node("researcher_tools", researcher_tools)
+researcher_builder.add_edge(START, "researcher")
+researcher_subgraph = researcher_builder.compile()
