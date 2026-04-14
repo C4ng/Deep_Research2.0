@@ -4,6 +4,7 @@
 - `coordinator_tools`: execute tool calls, parse ResearchResult from responses
 """
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -131,46 +132,50 @@ async def coordinator_tools(state: CoordinatorState, config: RunnableConfig) -> 
     tools = [dispatch_research]
     tools_by_name = {t.name: t for t in tools}
 
-    tool_names = [tc["name"] for tc in most_recent.tool_calls if tc["name"] in tools_by_name]
-    logger.info("Coordinator executing %d tool calls: %s", len(tool_names), tool_names)
+    # Filter to valid tool calls
+    valid_calls = [(tc, tools_by_name[tc["name"]]) for tc in most_recent.tool_calls
+                   if tc["name"] in tools_by_name]
+    unknown_calls = [tc for tc in most_recent.tool_calls if tc["name"] not in tools_by_name]
 
-    # Execute tool calls sequentially (each spawns a full researcher subgraph)
-    # TODO(parallel): Switch to asyncio.gather for parallel execution in Increment 5
-    tool_messages = []
-    new_results = []
+    logger.info("Coordinator dispatching %d researchers concurrently", len(valid_calls))
 
-    for tc in most_recent.tool_calls:
-        tool = tools_by_name.get(tc["name"])
-        if not tool:
-            tool_messages.append(
-                ToolMessage(
-                    content=f"Unknown tool: {tc['name']}",
-                    name=tc["name"],
-                    tool_call_id=tc["id"],
-                )
-            )
-            continue
-
+    # Execute all researcher dispatches concurrently
+    # TODO(throttle): If the LLM generates more tool calls than max_research_topics,
+    # we could defer excess to the next round. Currently we run them all — the prompt
+    # soft-limits decomposition, so this is unlikely to be an issue in practice.
+    async def _run_one(tc, tool):
         try:
             result_json = await tool.ainvoke(tc["args"], config)
             research_result = ResearchResult.model_validate_json(result_json)
-            new_results.append(research_result)
-
-            tool_messages.append(
-                ToolMessage(
-                    content=result_json,
-                    name=tc["name"],
-                    tool_call_id=tc["id"],
-                )
-            )
+            return result_json, research_result, None
         except Exception as e:
             logger.warning("Tool %s failed: %s", tc["name"], e)
+            return None, None, str(e)
+
+    outcomes = await asyncio.gather(*[_run_one(tc, tool) for tc, tool in valid_calls])
+
+    tool_messages = []
+    new_results = []
+
+    # Unknown tools
+    for tc in unknown_calls:
+        tool_messages.append(
+            ToolMessage(content=f"Unknown tool: {tc['name']}",
+                        name=tc["name"], tool_call_id=tc["id"])
+        )
+
+    # Successful and failed dispatches
+    for (tc, _tool), (result_json, research_result, error) in zip(valid_calls, outcomes):
+        if error:
             tool_messages.append(
-                ToolMessage(
-                    content=f"Error executing tool: {e}",
-                    name=tc["name"],
-                    tool_call_id=tc["id"],
-                )
+                ToolMessage(content=f"Error executing tool: {error}",
+                            name=tc["name"], tool_call_id=tc["id"])
+            )
+        else:
+            new_results.append(research_result)
+            tool_messages.append(
+                ToolMessage(content=result_json,
+                            name=tc["name"], tool_call_id=tc["id"])
             )
 
     logger.info("Coordinator tools completed: %d results collected", len(new_results))
