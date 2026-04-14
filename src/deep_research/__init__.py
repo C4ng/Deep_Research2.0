@@ -7,25 +7,27 @@ from deep_research.logging_config import setup_logging
 setup_logging()
 
 # Public API
-# TODO: Consider adding a utils.py re-export facade
-# if the number of internal helpers grows. For now, direct imports suffice.
 from deep_research.configuration import Configuration
 from deep_research.graph.graph import build_graph, deep_researcher
 from deep_research.models import (
+    ClarifyOutput,
+    CoordinatorReflection,
+    ResearchBrief,
     ResearchReflection,
     ResearchResult,
-    CoordinatorReflection,
 )
 from deep_research.state import AgentState, CoordinatorState, ResearcherState
 
 __all__ = [
     "AgentState",
+    "ClarifyOutput",
     "Configuration",
+    "CoordinatorReflection",
     "CoordinatorState",
+    "ResearchBrief",
     "ResearchReflection",
     "ResearchResult",
     "ResearcherState",
-    "CoordinatorReflection",
     "build_graph",
     "deep_researcher",
 ]
