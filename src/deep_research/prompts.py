@@ -230,6 +230,13 @@ contradictions:
 
 next_queries:
 - Target the gaps listed in missing_info. Do not repeat prior searches.
+
+prior_gaps_filled:
+- Count how many gaps listed in prior_context's "Gaps identified last round"
+  were substantively answered by this round's findings.
+- 0 if there were no prior gaps, or if none were filled.
+- A gap is "filled" if the findings now contain a meaningful answer, even if
+  partial. A gap is "unfilled" if the search returned nothing relevant.
 </field_criteria>"""
 
 

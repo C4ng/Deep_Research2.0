@@ -13,7 +13,7 @@ from deep_research.models import ClarifyOutput, ResearchBrief, ResearchReflectio
 from deep_research.nodes.brief import _format_brief, write_research_brief
 from deep_research.nodes.clarify import clarify_with_user
 from deep_research.nodes.researcher.summarizer import summarize_research
-from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection
+from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection, reflect
 from deep_research.nodes.report import final_report_generation
 from deep_research.models import CoordinatorReflection
 from deep_research.nodes.coordinator.reflect import _merge_notes, _format_reflection_guidance
@@ -184,6 +184,118 @@ def test_format_reflection_with_accumulated_no_new():
     result = _format_reflection(reflection, accumulated)
     assert "Prior finding A" in result
     assert "Still missing X" in result
+
+
+# --- Dead-end detection tests (no API calls) ---
+
+
+@pytest.mark.asyncio
+async def test_dead_end_forces_exit_after_two_rounds(researcher_state):
+    """Round 3 + prior gaps unfilled + prior_gaps_filled=0 → force exit to summarize."""
+    researcher_state["research_iterations"] = 2  # will become iteration=3
+    researcher_state["current_gaps"] = ["gap A", "gap B"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["some finding"],
+        missing_info=["gap A", "gap B"],
+        knowledge_state="partial",
+        should_continue=True,  # LLM wants to continue, but dead-end overrides
+        next_queries=["query X"],
+        prior_gaps_filled=0,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    assert result.goto == "summarize"
+
+
+@pytest.mark.asyncio
+async def test_dead_end_reformulates_on_first_detection(researcher_state):
+    """Round 2 + prior gaps unfilled → route to researcher with reformulation guidance."""
+    researcher_state["research_iterations"] = 1  # will become iteration=2
+    researcher_state["current_gaps"] = ["gap A"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["some finding"],
+        missing_info=["gap A"],
+        knowledge_state="partial",
+        should_continue=True,
+        next_queries=["query X"],
+        prior_gaps_filled=0,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    assert result.goto == "researcher"
+    assert "DEAD END" in result.update["last_reflection"]
+    assert "synonyms" in result.update["last_reflection"]
+
+
+@pytest.mark.asyncio
+async def test_no_dead_end_when_gaps_filled(researcher_state):
+    """Prior gaps exist but were filled → normal routing (no dead-end)."""
+    researcher_state["research_iterations"] = 1  # will become iteration=2
+    researcher_state["current_gaps"] = ["gap A", "gap B"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["filled gap A", "filled gap B"],
+        missing_info=["new gap C"],
+        knowledge_state="partial",
+        should_continue=True,
+        next_queries=["query for C"],
+        prior_gaps_filled=2,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    assert result.goto == "researcher"
+    assert "DEAD END" not in result.update["last_reflection"]
+
+
+@pytest.mark.asyncio
+async def test_no_dead_end_on_first_round(researcher_state):
+    """Round 1 with no prior gaps → no dead-end detection."""
+    researcher_state["research_iterations"] = 0  # will become iteration=1
+    researcher_state["current_gaps"] = []  # no prior gaps
+
+    mock_reflection = ResearchReflection(
+        key_findings=["finding A"],
+        missing_info=["gap X"],
+        knowledge_state="partial",
+        should_continue=True,
+        next_queries=["query X"],
+        prior_gaps_filled=0,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    assert result.goto == "researcher"
+    assert "DEAD END" not in result.update["last_reflection"]
+
+
+@pytest.mark.asyncio
+async def test_dead_end_does_not_override_natural_stop(researcher_state):
+    """When LLM already wants to stop (should_continue=False), dead-end doesn't interfere."""
+    researcher_state["research_iterations"] = 1  # will become iteration=2
+    researcher_state["current_gaps"] = ["gap A"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["some finding"],
+        missing_info=["gap A"],
+        knowledge_state="partial",
+        should_continue=False,  # LLM wants to stop naturally
+        next_queries=[],
+        prior_gaps_filled=0,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    assert result.goto == "summarize"
 
 
 # --- Summarizer node unit tests (no API calls) ---

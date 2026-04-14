@@ -140,11 +140,12 @@ async def reflect(
 
     logger.info(
         "Reflection result: knowledge_state=%s, should_continue=%s, "
-        "gaps=%d, contradictions=%d",
+        "gaps=%d, contradictions=%d, prior_gaps_filled=%d",
         reflection.knowledge_state,
         reflection.should_continue,
         len(reflection.missing_info),
         len(reflection.contradictions),
+        reflection.prior_gaps_filled,
     )
 
     # Accumulate structured knowledge (append reducers handle merging)
@@ -162,6 +163,29 @@ async def reflect(
         or iteration >= configurable.max_research_iterations
     )
 
+    # Dead-end detection: gaps persist unfilled across rounds
+    prior_gap_count = len(state.get("current_gaps", []))
+    dead_end = (
+        prior_gap_count > 0
+        and reflection.prior_gaps_filled == 0
+        and iteration >= 2
+    )
+
+    if dead_end and not should_stop:
+        if iteration >= 3:
+            # Reformulation already attempted — force exit
+            logger.warning(
+                "Dead end persists after reformulation — forcing exit "
+                "(round %d, %d unfilled gaps)", iteration, prior_gap_count,
+            )
+            should_stop = True
+        else:
+            # First dead end — inject reformulation guidance, continue
+            logger.info(
+                "Dead end detected (round %d, %d gaps unfilled) — "
+                "injecting reformulation guidance", iteration, prior_gap_count,
+            )
+
     if should_stop:
         if iteration >= configurable.max_research_iterations:
             logger.warning("Forcing exit — max research iterations (%d) reached", iteration)
@@ -176,11 +200,25 @@ async def reflect(
         )
 
     all_findings = list(state.get("accumulated_findings", [])) + reflection.key_findings
+    reflection_text = _format_reflection(reflection, all_findings)
+
+    # Append reformulation guidance on dead end
+    if dead_end:
+        reflection_text += (
+            "\n\nDEAD END: The gaps above persisted despite targeted searches. "
+            "Do NOT repeat similar queries. Instead:\n"
+            "- Try synonyms or alternative terminology\n"
+            "- Approach from a different angle or adjacent topic\n"
+            "- Search for the information in different source types "
+            "(academic papers, government reports, industry analyses)\n"
+            "- Broaden or narrow the scope to find related information"
+        )
+
     logger.info("Routing back to researcher for round %d", iteration + 1)
     return Command(
         goto="researcher",
         update={
             **accumulation_update,
-            "last_reflection": _format_reflection(reflection, all_findings),
+            "last_reflection": reflection_text,
         },
     )

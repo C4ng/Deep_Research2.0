@@ -88,6 +88,13 @@ class ResearchReflection(BaseModel):
         default_factory=list,
         description="Targeted queries for the next research round",
     )
+    prior_gaps_filled: int = Field(
+        default=0,
+        description=(
+            "How many gaps from the previous round were answered by this "
+            "round's findings. 0 if no prior gaps existed or none were filled."
+        ),
+    )
 
 
 class ResearchResult(BaseModel):
