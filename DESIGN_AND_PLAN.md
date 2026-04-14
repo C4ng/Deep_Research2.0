@@ -244,7 +244,28 @@ src/deep_research/
 
 **Delivers**: Adaptive system — simple questions get fast answers, complex questions get full multi-topic research, coordinator reasons about strategy instead of always decomposing into 5 topics.
 
-### Increment 5 — Dead-End Handling + Quality (Differentiators)
+### Increment 5 — Citation System
+**Goal**: Structured citation tracking from search through compression, with stable source IDs and verifiable references.
+
+- File-based source store: each URL's content saved to disk with metadata, deduplicated across rounds and researchers
+- Stable source IDs (URL hash) replace colliding per-tool-call SOURCE numbers
+- Topic-aware webpage summarization: inject research topic so extraction focuses on relevant aspects
+- Summarizer and reflection reference stable `[sN]` IDs instead of full URLs
+- Cross-round and cross-researcher URL dedup via deterministic file paths
+
+**Delivers**: Citation infrastructure — stable IDs, source preservation, dedup. Foundation for report verification.
+
+### Increment 6 — Final Report Redesign
+**Goal**: A report node that uses the full research metadata and produces verifiable citations.
+
+- Report receives accumulated metadata: key_findings, contradictions, gaps, knowledge_state
+- Source store provides URL lookup for citation resolution (`[sN]` → `[Title](URL)`)
+- Report structure: findings, open questions (from contradictions), limitations (from gaps), verified sources
+- Optional post-generation citation verification (programmatic check against store)
+
+**Delivers**: Trustworthy, well-structured reports. Every citation verifiable, contradictions and limitations surfaced honestly.
+
+### Increment 7 — Dead-End Handling + Quality (Differentiators)
 **Goal**: The features from DESIGN_REFERENCE.md Section 6 that set us apart.
 
 - Dead-end detection: compare `missing_info` across reflection rounds → reformulate
@@ -255,7 +276,7 @@ src/deep_research/
 
 **Delivers**: Robust, quality-aware research.
 
-### Increment 6 — Extensions + Provider Flexibility
+### Increment 8 — Extensions + Provider Flexibility
 - Multi-provider model support (Claude, OpenAI) + config resolver
 - API key routing per provider
 - Second search provider: `BraveSearchTool(BaseSearchTool)`

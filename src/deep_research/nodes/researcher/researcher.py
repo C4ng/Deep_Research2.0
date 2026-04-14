@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
-from deep_research.prompts import research_system_prompt
+from deep_research.prompts import researcher_prompt
 from deep_research.state import ResearcherState
 from deep_research.tools.registry import get_all_tools
 
@@ -66,7 +66,7 @@ async def researcher(state: ResearcherState, config: RunnableConfig) -> dict:
 
     # Build system prompt with topic, limits, and reflection context
     system_parts = [
-        research_system_prompt.format(
+        researcher_prompt.format(
             topic=state["research_topic"],
             date=datetime.now().strftime("%B %d, %Y"),
             max_searches_per_round=configurable.max_searches_per_round,

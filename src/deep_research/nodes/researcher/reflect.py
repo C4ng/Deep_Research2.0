@@ -15,7 +15,7 @@ from langgraph.types import Command
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
 from deep_research.models import ResearchReflection
-from deep_research.prompts import reflection_prompt
+from deep_research.prompts import researcher_reflection_prompt
 from deep_research.state import ResearcherState
 
 logger = logging.getLogger(__name__)
@@ -113,7 +113,7 @@ async def _run_reflection(
         .with_config(configurable=model_config)
     )
 
-    prompt = reflection_prompt.format(
+    prompt = researcher_reflection_prompt.format(
         research_topic=state["research_topic"],
         findings=_extract_tool_results(state),
         accumulated_context=_format_accumulated_context(state),

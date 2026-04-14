@@ -15,7 +15,7 @@ from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
 from deep_research.models import ResearchResult
 from deep_research.nodes.coordinator.tools import dispatch_research
-from deep_research.prompts import coordinator_system_prompt
+from deep_research.prompts import coordinator_prompt
 from deep_research.state import CoordinatorState
 
 logger = logging.getLogger(__name__)
@@ -83,7 +83,7 @@ async def coordinator(state: CoordinatorState, config: RunnableConfig) -> dict:
     )
 
     system_parts = [
-        coordinator_system_prompt.format(
+        coordinator_prompt.format(
             research_brief=state["research_brief"],
             prior_research=prior_research,
             max_research_topics=configurable.max_research_topics,

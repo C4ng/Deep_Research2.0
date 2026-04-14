@@ -81,7 +81,7 @@ Simplicity assessment:
     Set is_simple accordingly."""
 
 
-research_system_prompt = """\
+researcher_prompt = """\
 You are a research assistant investigating a specific topic. Today's date is {date}.
 
 <task>
@@ -146,7 +146,7 @@ Citation rules:
 Do not refer to yourself or comment on the writing process."""
 
 
-reflection_prompt = """\
+researcher_reflection_prompt = """\
 You are assessing the progress of a research task. Today's date is {date}.
 
 <research_topic>
@@ -235,7 +235,7 @@ Today's date is {date}.
 </instructions>"""
 
 
-coordinator_system_prompt = """\
+coordinator_prompt = """\
 You are a research coordinator managing a team of focused researchers. \
 Today's date is {date}.
 
