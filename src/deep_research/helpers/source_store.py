@@ -209,7 +209,7 @@ def resolve_citations(
         sids = re.split(r"\s*,\s*", ids_str)
         nums = [str(id_to_num[sid]) for sid in sids if sid in id_to_num]
         if not nums:
-            return ""  # all IDs unknown — remove the bracket
+            return "[unverified]"  # all IDs unknown — flag for reader
         return "[" + ", ".join(nums) + "]"
 
     resolved = _CITATION_PATTERN.sub(_replace_match, report)

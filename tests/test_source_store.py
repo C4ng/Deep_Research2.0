@@ -232,12 +232,22 @@ def test_resolve_ordering_by_first_appearance(sample_source_map):
 
 
 def test_resolve_unknown_citation(sample_source_map):
-    """Unknown source ID removed and warning returned."""
+    """Unknown source ID replaced with [unverified] and warning returned."""
     report = "Unknown source [ffffffff] cited here."
     resolved, warnings = resolve_citations(report, sample_source_map)
     assert "[ffffffff]" not in resolved
+    assert "[unverified]" in resolved
     assert len(warnings) == 1
     assert "ffffffff" in warnings[0]
+
+
+def test_resolve_all_unknown_bracket(sample_source_map):
+    """Multi-citation bracket with all unknown IDs → single [unverified]."""
+    report = "Claim [eeeeeeee, ffffffff] here."
+    resolved, warnings = resolve_citations(report, sample_source_map)
+    assert "[unverified]" in resolved
+    assert "[eeeeeeee" not in resolved
+    assert len(warnings) == 2
 
 
 def test_resolve_mixed_known_unknown(sample_source_map):
