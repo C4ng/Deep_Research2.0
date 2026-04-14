@@ -115,8 +115,7 @@ to search for what is missing.
 
 
 final_report_prompt = """\
-Create a comprehensive, well-structured research report based on the
-findings below.
+Create a comprehensive research report based on the findings below.
 
 <research_brief>
 {brief}
@@ -126,22 +125,36 @@ findings below.
 {notes}
 </findings>
 
+<research_metadata>
+{report_metadata}
+</research_metadata>
+
+<source_map>
+{source_map}
+</source_map>
+
 Today's date is {date}.
 
-Requirements:
+<instructions>
 1. Structure with markdown headings (# title, ## sections, ### subsections).
-2. Include specific facts, data, and insights from the findings.
-3. Reference sources inline using [Title](URL) format.
-4. Be thorough — each section should be substantive, not a brief mention.
-5. End with a ### Sources section listing all referenced URLs.
-6. Write in the same language as the original user query.
-
-Citation rules:
-- Assign each unique URL a sequential citation number [1], [2], [3]...
-- Use inline citations: "According to [1], ..."
-- List all sources at the end:
-  [1] Source Title: URL
-  [2] Source Title: URL
+2. Write substantive sections — each should contain specific facts, data, and
+   analysis from the findings, not brief mentions.
+3. Cite sources inline using their [source_id] tags exactly as they appear in
+   the findings (e.g., [a1b2c3d4]). Do NOT invent source IDs — only use IDs
+   that appear in the findings or source map.
+4. When research_metadata lists contradictions, include a "Conflicting Evidence"
+   section presenting both sides with their source IDs. Do not silently pick
+   one side.
+5. When research_metadata contains gaps, include an "Areas for Further Research"
+   section. The metadata labels indicate why each gap exists (not investigated,
+   searched but not found, partial coverage) — use these signals to explain
+   what remains unknown and why.
+6. Use the coverage/knowledge_state signals in research_metadata to calibrate
+   confidence in the main body. Topics with "partial" coverage should use
+   hedging language. Topics with "sufficient" coverage can be more assertive.
+7. Do NOT write a Sources or References section — it will be added
+   programmatically after generation.
+</instructions>
 
 Do not refer to yourself or comment on the writing process."""
 
