@@ -1,6 +1,6 @@
 # Increment 6 — Final Report Redesign
 **Goal**: A report node that uses full research metadata and produces verifiable, programmatically resolved citations.
-**Status**: Planning
+**Status**: Complete
 **Depends on**: Increment 5 (Citation System) — stable `[sN]` IDs and source store on disk
 
 ## Overview
@@ -136,11 +136,14 @@ Key prompt instructions:
 
 ## Implementation Steps
 
-### Step 0 — Add `report_metadata` to AgentState
+### Step 0 — Add `report_metadata` to AgentState + CoordinatorState
 
 **File**: `src/deep_research/state.py`
 
-Add one field:
+Added `report_metadata: str` to both `AgentState` and `CoordinatorState`.
+CoordinatorState needs the field so LangGraph propagates it from subgraph
+output to parent state via matching key names (verified working).
+
 ```python
 class AgentState(TypedDict):
     # ... existing fields ...
@@ -149,6 +152,7 @@ class AgentState(TypedDict):
 ```
 
 Default to `""` — report node handles empty gracefully.
+Also updated `INITIAL_STATE` in `tests/test_integration.py`.
 
 ### Step 1 — Format metadata at exit points
 
@@ -361,39 +365,39 @@ async def final_report_generation(state: AgentState, config: RunnableConfig) -> 
 
 ### Step 5 — Handle subgraph state propagation
 
-Need to verify `report_metadata` flows from CoordinatorState → AgentState. Two options:
-
-**Option A**: Add `report_metadata: str` to `CoordinatorState`. The coordinator subgraph writes it on exit, and LangGraph's subgraph output mapping propagates it to AgentState if the key names match.
-
-**Option B**: Don't pass through CoordinatorState. Instead, compute `report_metadata` in the main graph between coordinator and report nodes.
-
-Option A is simpler — check if LangGraph propagates matching keys from subgraph output to parent state. If yes, just add the field to CoordinatorState. If not, we may need an intermediate node or adapt the approach (like we did with `set_sources_dir` for config propagation).
-
-Need to test this during implementation.
+**Resolved in Step 0**: Added `report_metadata` to both `CoordinatorState`
+and `AgentState`. LangGraph propagates matching keys from subgraph output
+to parent state — verified working in integration tests. No workaround
+needed (unlike `sources_dir` in Increment 5 which required module-level cache).
 
 ### Step 6 — Tests
 
 **File**: `tests/test_source_store.py` (extend)
 
-New unit tests for citation resolution:
+12 new unit tests for citation resolution and formatting:
+- `test_format_source_map_for_prompt` — correct formatting
+- `test_format_source_map_empty` — empty map returns placeholder
 - `test_resolve_single_citation` — `[a1b2c3d4]` → `[1]`
 - `test_resolve_multi_citation` — `[a1b2c3d4, e5f6a7b8]` → `[1, 2]`
 - `test_resolve_repeated_citation` — same ID cited twice → same number
+- `test_resolve_ordering_by_first_appearance` — sequential numbers follow appearance order
 - `test_resolve_unknown_citation` — ID not in store → removed, warning returned
+- `test_resolve_mixed_known_unknown` — known IDs kept, unknown dropped in same bracket
 - `test_resolve_appends_sources_section` — Sources section at end with correct URLs
 - `test_resolve_strips_llm_sources_section` — removes LLM-generated `## Sources` before appending
-- `test_format_source_map_for_prompt` — correct formatting
+- `test_resolve_no_citations` — report with no source IDs returned unchanged
+- `test_resolve_empty_source_map` — empty source map returns report unchanged
 
-New unit tests for metadata formatting:
-- `test_format_report_metadata_with_contradictions`
-- `test_format_report_metadata_empty` — no metadata → empty string
+Note: metadata formatting unit tests (`_format_report_metadata`) deferred — the
+function is tested implicitly via integration tests. Add if the formatting logic
+gets more complex.
 
 **File**: `tests/test_integration.py` (extend existing citation test)
 
-Extend `test_citation_tracking_end_to_end` to also verify:
-- Report contains `[N]` sequential citations (not raw `[sN]` hex IDs)
-- Report ends with `## Sources` section
-- Each `[N]` in report body has a corresponding entry in Sources
+Extended `test_citation_tracking_end_to_end` with 3 new assertions:
+- Report contains sequential `[N]` citations (not raw `[sN]` hex IDs)
+- Report has `## Sources` section
+- No raw hex source IDs remain in the report
 
 ---
 
@@ -401,14 +405,14 @@ Extend `test_citation_tracking_end_to_end` to also verify:
 
 | File | Change |
 |------|--------|
-| `src/deep_research/state.py` | Add `report_metadata: str` to AgentState (+ CoordinatorState if needed) |
+| `src/deep_research/state.py` | Add `report_metadata: str` to AgentState and CoordinatorState |
 | `src/deep_research/nodes/coordinator/reflect.py` | Add `_format_report_metadata()`, write to state on exit |
 | `src/deep_research/nodes/researcher/adapter.py` | Format metadata from single researcher state |
 | `src/deep_research/helpers/source_store.py` | Add `resolve_citations()`, `format_source_map_for_prompt()` |
 | `src/deep_research/prompts.py` | Rewrite `final_report_prompt` with metadata, source map, [sN] instructions |
 | `src/deep_research/nodes/report.py` | Wire source map + metadata + post-processing |
-| `tests/test_source_store.py` | Citation resolution unit tests |
-| `tests/test_integration.py` | Extend citation e2e test for report verification |
+| `tests/test_source_store.py` | 12 new citation resolution unit tests |
+| `tests/test_integration.py` | Extend citation e2e test for report-level verification |
 
 ## Files NOT Changed
 
@@ -421,8 +425,68 @@ Extend `test_citation_tracking_end_to_end` to also verify:
 | `coordinator/coordinator.py` | Coordinator LLM invocation unchanged |
 | `models.py` | No new Pydantic schemas — `report_metadata` is a string, not structured |
 
+## Observations from Integration Testing
+
+End-to-end runs on "latest Python version" (simple path, 3 sources) and
+"health effects of intermittent fasting" (coordinator path, 5 researchers,
+112 sources):
+
+**What works well:**
+
+- **Citation resolution**: All `[sN]` hex tags replaced with sequential `[N]`.
+  Zero raw hex IDs remaining in final reports. Deterministic Sources section
+  appended with real URLs from the store.
+- **Hallucinated citation detection**: LLM invented source IDs not in the store
+  (6 in the fasting report, 2 in the Python report). The resolver caught and
+  removed all of them, logging warnings. Validates the programmatic approach
+  over trusting the LLM with URLs.
+- **Contradictions surfaced**: The fasting report produced multiple "Conflicting
+  Evidence" subsections (weight loss efficacy, cholesterol levels, thyroid
+  hormones, ghrelin levels, cardiovascular risk). Both sides cited with sources.
+- **Gap types distinguished**: The LLM correctly used metadata labels to explain
+  why gaps exist. "Persistent gap in large-scale long-term human clinical
+  studies" (searched but not found) vs "detailed considerations for adolescents
+  were not extensively covered" (partial coverage).
+- **Confidence calibration**: Topics with `knowledge_state: partial` got hedging
+  ("still developing", "most evidence comes from short- to medium-term studies").
+  Topics with `sufficient` were more assertive.
+- **Subgraph state propagation**: `report_metadata` propagates from
+  CoordinatorState → AgentState via matching key names. No workaround needed.
+
+**Known issues for later development:**
+
+1. **Contradictions buried inline without clear hierarchy**: The LLM placed
+   contradictions as inline `**Conflicting Evidence: ...**` subsections within
+   topic sections. Contextually correct but visually hard to scan — no clear
+   structural separation. Will improve naturally when Increment 7 adds
+   contradiction resolution with analysis (richer content warrants proper
+   subsections). Not worth fixing with a prompt tweak while contradictions are
+   still raw "A says X, B says Y."
+
+2. **No summary "Areas for Further Research" section**: Gaps are noted inline
+   within relevant topic sections (good for context) but there's no top-level
+   summary collecting all gaps for a quick scan. Consider prompting for both:
+   inline context + summary section. Defer to Increment 7 when the report
+   prompt gets further refinement alongside contradiction resolution.
+
+3. **Duplicate contradictions in metadata**: `accumulated_contradictions` uses
+   an append reducer (`operator.add`), so if round 2 and round 3 both identify
+   the same contradiction, it appears twice in the metadata. Root cause is in
+   reflection accumulation, not in report formatting. Fix in Increment 7 when
+   reworking the contradiction pipeline (resolution, dedup, trust scoring).
+
+4. **LLM still hallucinates source IDs**: Despite the prompt saying "Do NOT
+   invent source IDs," the LLM creates ones not in the store (6 out of ~90
+   citations in the fasting report). The programmatic resolver catches and
+   removes them, but this means some claims in the report lose their citation
+   silently. Consider: flag removed citations in the report text (e.g.,
+   "[citation needed]") rather than silently removing.
+
 ## Deferred
 
-- **Contradiction resolution** (Increment 7): This increment presents unresolved contradictions transparently. Resolution mechanism (follow-up searches, trust scoring) is Increment 7 scope.
+- **Contradiction resolution** (Increment 7): This increment presents unresolved contradictions transparently. Resolution mechanism (follow-up searches, trust scoring, structured analysis) is Increment 7 scope. Will also improve report structure for contradictions.
+- **Contradiction dedup** (Increment 7): Deduplicate `accumulated_contradictions` at reflection or metadata formatting level.
+- **Report structure refinement** (Increment 7): Summary sections for gaps and contradictions alongside inline context. Better visual hierarchy.
 - **URL authority scoring**: Would help report calibrate source credibility. Increment 7/8 scope.
 - **Report length control**: No token budget or length targeting yet. If reports are too long/short, address separately.
+- **Hallucinated citation handling**: Consider marking removed citations as `[citation needed]` instead of silent removal.
