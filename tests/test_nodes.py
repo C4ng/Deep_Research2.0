@@ -7,11 +7,14 @@ Unit tests (reflect routing, formatting) run without API calls.
 import pytest
 from langchain_core.messages import HumanMessage, ToolMessage
 
-from deep_research.models import ResearchReflection
+from deep_research.models import ResearchReflection, ResearchResult
 from deep_research.nodes.brief import write_research_brief
 from deep_research.nodes.researcher.summarizer import summarize_research
 from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection
 from deep_research.nodes.report import final_report_generation
+from deep_research.models import SupervisorReflection
+from deep_research.nodes.supervisor.reflect import _merge_notes, _format_reflection_guidance
+from deep_research.nodes.supervisor.supervisor import _format_research_results
 from deep_research.tools.registry import get_all_tools
 
 
@@ -226,3 +229,147 @@ def test_current_gaps_overwrite():
     state["current_gaps"] = ["new gap only"]
     assert state["current_gaps"] == ["new gap only"]
     assert "old gap 1" not in state["current_gaps"]
+
+
+# --- Supervisor formatting tests (no API calls) ---
+
+
+def test_format_research_results_empty():
+    """Empty results list produces a 'no research' message."""
+    result = _format_research_results([])
+    assert "No research" in result
+
+
+def test_format_research_results_single():
+    """Single result formats with topic, knowledge state, and findings."""
+    results = [
+        ResearchResult(
+            topic="Quantum hardware",
+            notes="compressed notes...",
+            key_findings=["Superconducting qubits lead", "Ion traps viable"],
+            knowledge_state="partial",
+            missing_info=["No data on photonic approaches"],
+            contradictions=["Source A says 1000 qubits, Source B says 500"],
+        )
+    ]
+    formatted = _format_research_results(results)
+    assert "Quantum hardware" in formatted
+    assert "partial" in formatted
+    assert "Superconducting qubits lead" in formatted
+    assert "Ion traps viable" in formatted
+    assert "No data on photonic approaches" in formatted
+    assert "Source A says 1000 qubits" in formatted
+    # Notes should NOT appear (context engineering)
+    assert "compressed notes" not in formatted
+
+
+def test_format_research_results_multiple():
+    """Multiple results are numbered and all included."""
+    results = [
+        ResearchResult(
+            topic="Topic A",
+            notes="notes A",
+            key_findings=["Finding A"],
+            knowledge_state="sufficient",
+        ),
+        ResearchResult(
+            topic="Topic B",
+            notes="notes B",
+            key_findings=["Finding B"],
+            knowledge_state="insufficient",
+            missing_info=["Gap B"],
+        ),
+    ]
+    formatted = _format_research_results(results)
+    assert "Researcher 1" in formatted
+    assert "Researcher 2" in formatted
+    assert "Topic A" in formatted
+    assert "Topic B" in formatted
+    assert "Finding A" in formatted
+    assert "Finding B" in formatted
+    assert "Gap B" in formatted
+
+
+def test_format_research_results_no_optional_fields():
+    """Result with no gaps, contradictions still formats cleanly."""
+    results = [
+        ResearchResult(
+            topic="Simple topic",
+            notes="some notes",
+            key_findings=["One finding"],
+            knowledge_state="sufficient",
+        )
+    ]
+    formatted = _format_research_results(results)
+    assert "Simple topic" in formatted
+    assert "One finding" in formatted
+    assert "Remaining gaps" not in formatted
+    assert "Contradictions" not in formatted
+
+
+# --- Supervisor reflection helpers (no API calls) ---
+
+
+def test_merge_notes_combines_with_headers():
+    """Merges researcher notes with topic headers."""
+    results = [
+        ResearchResult(
+            topic="Topic A", notes="Notes for A",
+            key_findings=[], knowledge_state="sufficient",
+        ),
+        ResearchResult(
+            topic="Topic B", notes="Notes for B",
+            key_findings=[], knowledge_state="sufficient",
+        ),
+    ]
+    merged = _merge_notes(results)
+    assert "## Topic: Topic A" in merged
+    assert "Notes for A" in merged
+    assert "## Topic: Topic B" in merged
+    assert "Notes for B" in merged
+
+
+def test_merge_notes_skips_empty():
+    """Results with empty notes are excluded."""
+    results = [
+        ResearchResult(
+            topic="Has notes", notes="Content here",
+            key_findings=[], knowledge_state="sufficient",
+        ),
+        ResearchResult(
+            topic="No notes", notes="",
+            key_findings=[], knowledge_state="partial",
+        ),
+    ]
+    merged = _merge_notes(results)
+    assert "Has notes" in merged
+    assert "No notes" not in merged
+
+
+def test_format_reflection_guidance_full():
+    """Formats guidance with assessment, gaps, and contradictions."""
+    reflection = SupervisorReflection(
+        overall_assessment="Good coverage but missing pricing data.",
+        cross_topic_contradictions=["Researcher 1 says X, Researcher 2 says Y"],
+        coverage_gaps=["No pricing comparison", "Missing regulatory analysis"],
+        should_continue=True,
+        knowledge_state="partial",
+    )
+    guidance = _format_reflection_guidance(reflection)
+    assert "Good coverage but missing pricing data" in guidance
+    assert "No pricing comparison" in guidance
+    assert "Missing regulatory analysis" in guidance
+    assert "Researcher 1 says X" in guidance
+
+
+def test_format_reflection_guidance_no_gaps_or_contradictions():
+    """Guidance with only assessment when no gaps or contradictions."""
+    reflection = SupervisorReflection(
+        overall_assessment="All topics well covered.",
+        should_continue=False,
+        knowledge_state="sufficient",
+    )
+    guidance = _format_reflection_guidance(reflection)
+    assert "All topics well covered" in guidance
+    assert "Coverage gaps" not in guidance
+    assert "contradictions" not in guidance
