@@ -7,10 +7,10 @@ Unit tests (reflect routing, formatting) run without API calls.
 import pytest
 from langchain_core.messages import HumanMessage, ToolMessage
 
-from deep_research.models import Reflection
+from deep_research.models import ResearchReflection
 from deep_research.nodes.brief import write_research_brief
-from deep_research.nodes.compress import compress_research
-from deep_research.nodes.reflect import _extract_tool_results, _format_reflection
+from deep_research.nodes.researcher.summarizer import summarize_research
+from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection
 from deep_research.nodes.report import final_report_generation
 from deep_research.tools.registry import get_all_tools
 
@@ -100,7 +100,7 @@ def test_extract_tool_results():
 
 def test_format_reflection_with_all_fields():
     """Formats reflection with key_findings, missing_info, contradictions, and next_queries."""
-    reflection = Reflection(
+    reflection = ResearchReflection(
         key_findings=["Found X", "Found W"],
         missing_info=["No data on Y", "Missing Z"],
         contradictions=["Source A says X, Source B says not X"],
@@ -119,7 +119,7 @@ def test_format_reflection_with_all_fields():
 
 def test_format_reflection_minimal():
     """Formats reflection without contradictions or next_queries."""
-    reflection = Reflection(
+    reflection = ResearchReflection(
         key_findings=["Found X"],
         missing_info=["No data on Y"],
         knowledge_state="insufficient",
@@ -131,11 +131,11 @@ def test_format_reflection_minimal():
     assert "next queries" not in result
 
 
-# --- Compress node unit tests (no API calls) ---
+# --- Summarizer node unit tests (no API calls) ---
 
 
 @pytest.mark.asyncio
-async def test_compress_skips_short_content():
+async def test_summarize_skips_short_content():
     """Short tool results are returned as-is without LLM compression."""
     state = {
         "messages": [
@@ -147,12 +147,12 @@ async def test_compress_skips_short_content():
         "research_iterations": 0,
         "last_reflection": "",
     }
-    result = await compress_research(state, config={"configurable": {}})
+    result = await summarize_research(state, config={"configurable": {}})
     assert result["notes"] == "Short result"
 
 
 @pytest.mark.asyncio
-async def test_compress_empty_messages():
+async def test_summarize_empty_messages():
     """No tool results returns empty notes."""
     state = {
         "messages": [],
@@ -162,5 +162,5 @@ async def test_compress_empty_messages():
         "research_iterations": 0,
         "last_reflection": "",
     }
-    result = await compress_research(state, config={"configurable": {}})
+    result = await summarize_research(state, config={"configurable": {}})
     assert result["notes"] == ""

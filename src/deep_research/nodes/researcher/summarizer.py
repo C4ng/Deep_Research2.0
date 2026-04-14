@@ -1,4 +1,4 @@
-"""Compress node — compresses raw tool results into concise research notes.
+"""Summarizer node — compresses raw tool results into concise research notes.
 
 Extracts all ToolMessage content from messages and compresses it
 using the summarization model (cheap, no reasoning needed).
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 COMPRESSION_THRESHOLD = 2000
 
 
-async def compress_research(state: AgentState, config: RunnableConfig) -> dict:
+async def summarize_research(state: AgentState, config: RunnableConfig) -> dict:
     """Compress accumulated tool results into concise research notes.
 
     Extracts raw ToolMessage content from messages, compresses via

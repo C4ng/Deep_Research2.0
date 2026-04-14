@@ -1,7 +1,7 @@
 """Reflect node — structured reflection after tool execution.
 
 Assesses research progress and routes to either continue
-researching or compress findings and exit.
+researching or summarize findings and exit.
 """
 
 import logging
@@ -14,7 +14,7 @@ from langgraph.types import Command
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
-from deep_research.models import Reflection
+from deep_research.models import ResearchReflection
 from deep_research.prompts import reflection_prompt
 from deep_research.state import AgentState
 
@@ -29,8 +29,8 @@ def _extract_tool_results(state: AgentState) -> str:
     )
 
 
-def _format_reflection(reflection: Reflection) -> str:
-    """Format a Reflection into a readable string for the researcher."""
+def _format_reflection(reflection: ResearchReflection) -> str:
+    """Format a ResearchReflection into a readable string for the researcher."""
     parts = [
         "Already covered:",
         *[f"- {f}" for f in reflection.key_findings],
@@ -48,11 +48,11 @@ def _format_reflection(reflection: Reflection) -> str:
 
 async def reflect(
     state: AgentState, config: RunnableConfig
-) -> Command[Literal["researcher", "compress"]]:
-    """Assess research progress and decide whether to continue or compress.
+) -> Command[Literal["researcher", "summarize"]]:
+    """Assess research progress and decide whether to continue or summarize.
 
     Routes to 'researcher' if more searching is needed,
-    or to 'compress' when research is complete or max iterations reached.
+    or to 'summarize' when research is complete or max iterations reached.
     """
     configurable = Configuration.from_runnable_config(config)
 
@@ -66,7 +66,7 @@ async def reflect(
 
     model = (
         configurable_model
-        .with_structured_output(Reflection)
+        .with_structured_output(ResearchReflection)
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(configurable=model_config)
     )
@@ -81,7 +81,7 @@ async def reflect(
     iteration = state.get("research_iterations", 0) + 1
     logger.info("Reflection round %d — assessing research progress", iteration)
 
-    reflection: Reflection = await model.ainvoke([HumanMessage(content=prompt)])
+    reflection: ResearchReflection = await model.ainvoke([HumanMessage(content=prompt)])
 
     logger.info(
         "Reflection result: knowledge_state=%s, should_continue=%s, "
@@ -102,9 +102,9 @@ async def reflect(
     if should_stop:
         if iteration >= configurable.max_research_iterations:
             logger.warning("Forcing exit — max research iterations (%d) reached", iteration)
-        logger.info("Routing to compress")
+        logger.info("Routing to summarize")
         return Command(
-            goto="compress",
+            goto="summarize",
             update={
                 "research_iterations": iteration,
                 "last_reflection": "",

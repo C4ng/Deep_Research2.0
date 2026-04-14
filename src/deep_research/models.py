@@ -41,7 +41,7 @@ class WebpageSummary(BaseModel):
     )
 
 
-class Reflection(BaseModel):
+class ResearchReflection(BaseModel):
     """Structured reflection after a research round."""
 
     key_findings: list[str] = Field(description="Specific facts learned this round")

@@ -1,17 +1,8 @@
-"""Researcher subgraph — searches for information on a given topic.
+"""Researcher node functions — LLM invocation and tool execution.
 
-Four nodes in a loop:
-- `researcher`: calls the model (one LLM invocation with tools)
-- `researcher_tools`: executes tool calls in parallel
-- `reflect`: structured reflection — decides continue or stop
-- `compress`: compresses raw tool results into concise notes on exit
-
-Flow: researcher → researcher_tools → reflect → (researcher | compress → END)
-
-No inner loop — each research round gets one LLM call, then reflects.
-The model can call multiple tools in parallel within that one response.
-
-Compiled as a subgraph so the main graph treats it as a single node.
+Single responsibility per function:
+- `researcher`: one LLM call with tools bound
+- `researcher_tools`: execute tool calls in parallel
 """
 
 import asyncio
@@ -20,12 +11,9 @@ from datetime import datetime
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.graph import END, START, StateGraph
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
-from deep_research.nodes.compress import compress_research
-from deep_research.nodes.reflect import reflect
 from deep_research.prompts import research_system_prompt
 from deep_research.state import AgentState
 from deep_research.tools.registry import get_all_tools
@@ -150,16 +138,3 @@ async def researcher_tools(state: AgentState, config: RunnableConfig) -> dict:
     ]
 
     return {"messages": tool_messages}
-
-
-# Build the researcher subgraph
-researcher_builder = StateGraph(AgentState)
-researcher_builder.add_node("researcher", researcher)
-researcher_builder.add_node("researcher_tools", researcher_tools)
-researcher_builder.add_node("reflect", reflect)
-researcher_builder.add_node("compress", compress_research)
-researcher_builder.add_edge(START, "researcher")
-researcher_builder.add_edge("researcher", "researcher_tools")
-researcher_builder.add_edge("researcher_tools", "reflect")
-researcher_builder.add_edge("compress", END)
-researcher_subgraph = researcher_builder.compile()
