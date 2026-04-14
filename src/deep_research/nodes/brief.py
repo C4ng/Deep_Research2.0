@@ -50,7 +50,7 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
     logger.info("Brief generated: %s (is_simple=%s)", brief.title, brief.is_simple)
 
     # Store as formatted string for downstream consumption
-    brief_str = f"Title: {brief.title}\n\n{brief.research_question}"
+    brief_str = f"Title: {brief.title}\n\n{brief.research_question}\n\nApproach: {brief.approach}"
 
     # TODO: Consider whether downstream nodes (researcher, report) should also
     # receive the original user messages alongside the brief. The brief is the

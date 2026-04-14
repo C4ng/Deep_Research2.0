@@ -34,6 +34,9 @@ class ResearchBrief(BaseModel):
     research_question: str = Field(
         description="Detailed research question with all user constraints preserved"
     )
+    approach: str = Field(
+        description="Strategic guidance: what kind of question, angles to cover, breadth vs depth"
+    )
     is_simple: bool = Field(
         description=(
             "Whether a single researcher can handle this question. "

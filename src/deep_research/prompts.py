@@ -31,9 +31,9 @@ Guidelines:
 
 research_brief_prompt = """\
 You will be given messages from a user requesting research on a topic.
-Transform these into a single, detailed research question that will guide
-the research process. Do NOT decompose into subtopics or sub-questions —
-a downstream coordinator handles that.
+Create a draft research plan that will be reviewed by the user before
+research begins. The plan has two parts: a clear research question and
+a recommended approach.
 
 <messages>
 {messages}
@@ -41,28 +41,31 @@ a downstream coordinator handles that.
 
 Today's date is {date}.
 
-Guidelines:
-1. Maximize specificity — include all known user preferences, constraints,
-   and context. Every detail from the user should be captured.
-2. Fill unstated but necessary dimensions as open-ended — if certain
-   attributes are essential for meaningful research but the user has not
-   provided them, explicitly state that they are open-ended or default to
-   no specific constraint. Do not invent requirements.
-3. Avoid unwarranted assumptions — if the user has not provided a
-   particular detail, do not invent one. State the lack of specification
-   and guide the researcher to treat it as flexible.
-4. If specific sources should be prioritized, include them. For product
-   research, prefer official or primary websites. For academic queries,
-   prefer original papers. For people, prefer LinkedIn or personal sites.
-5. If the query is in a specific language, note to prioritize sources
-   published in that language.
-6. Phrase from the user's perspective — preserve their voice and intent.
-7. Be thorough — this research question is the sole input the coordinator
-   sees when deciding how to decompose and assign research.
-8. Determine if this is a simple question — a narrow, factual query where
-   a single researcher can find the answer without multi-topic decomposition.
-   Examples: "What is the latest stable version of React?", "When was
-   company X founded?" Set is_simple accordingly."""
+Research question — what to investigate:
+1. Capture the user's question with full specificity — include all
+   preferences, constraints, and context they provided.
+2. If certain dimensions are essential but the user didn't specify them,
+   explicitly state they are open-ended. Do not invent requirements.
+3. If specific sources should be prioritized, include them.
+4. If the query is in a specific language, note to prioritize sources
+   in that language.
+5. Phrase from the user's perspective — preserve their voice and intent.
+
+Approach — how to investigate:
+6. Identify what kind of research this question needs. What are the
+   important angles or facets to cover? Should the research prioritize
+   breadth (many angles, surface-level) or depth (fewer angles, thorough)?
+7. Note any priorities — which aspects matter most, what would make the
+   research most useful to the user.
+8. This is strategic guidance, not an exact topic list. A downstream
+   coordinator will decide the specific decomposition into research tasks.
+9. Use bullet points — easy to scan and modify.
+
+Simplicity assessment:
+10. Determine if this is a simple question that a single researcher can
+    handle without multi-topic decomposition. Examples: "What is the
+    latest stable version of React?", "When was company X founded?"
+    Set is_simple accordingly."""
 
 
 research_system_prompt = """\
