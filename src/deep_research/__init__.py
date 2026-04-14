@@ -12,12 +12,13 @@ setup_logging()
 from deep_research.configuration import Configuration
 from deep_research.graph.graph import build_graph, deep_researcher
 from deep_research.models import ResearchReflection
-from deep_research.state import AgentState
+from deep_research.state import AgentState, ResearcherState
 
 __all__ = [
     "AgentState",
     "Configuration",
     "ResearchReflection",
+    "ResearcherState",
     "build_graph",
     "deep_researcher",
 ]

@@ -429,6 +429,22 @@ Add to `configuration.py`:
 
 ---
 
+## Observations from Step 0-1 testing
+
+**Researcher receives full brief as topic (pre-supervisor)**: The `_run_researcher` adapter passes the entire research brief (title + 6 questions + 8 topics) as `research_topic`. The researcher treated this as one broad survey — batched 5 queries mapping ~1:1 to the research questions, got 68k chars of results, and reflection said "sufficient" after 1 round. This is expected: the supervisor will decompose into focused subtopics, each researcher gets one narrow topic and goes deeper.
+
+**Reflection says "sufficient" after 1 round with broad topic**: With 5 broad queries returning comprehensive surface-level coverage, the model legitimately saw all questions addressed. Not a prompt issue — the topic is too broad for one researcher. Focused subtopics from the supervisor will naturally require multiple rounds to reach depth.
+
+**Accumulated findings are substantive**: 16 key findings with source references (e.g., "companies raised $3.77 billion in the first nine months, nearly tripling 2024's total"). These are concrete facts, not vague summaries. The `key_findings` criteria update ("strategic observations") is working.
+
+**Contradictions carry source references but not URLs**: The contradiction field cited "Source 2, 12, 13, 22" — numbered references within the Tavily search results, not standalone URLs. URLs live in the raw tool output and flow through the summarizer. Acceptable for now — contradictions are used for routing decisions at the supervisor level, not for direct citation.
+
+**Compression ratio still aggressive**: 68k → 6.5k chars (9%). Expected with broad overlapping results. Should improve with focused subtopics producing less redundancy.
+
+**Gemini requires HumanMessage**: `SystemMessage`-only calls fail with `ValueError: contents are required.` — Gemini maps SystemMessage to `system_instruction` (separate from `contents`). Added minimal HumanMessage ("Begin researching the topic described above.") as provider requirement.
+
+---
+
 ## Resolved Questions
 
 1. **State mapping between subgraphs**: LangGraph auto-maps fields by name when schemas overlap. `SupervisorState` has `research_brief` and `notes` (same names as `AgentState`), so the compiled subgraph can be added directly as a node — no wrapper needed. Extra fields (`research_results`, `supervisor_iterations`) are internal. For the researcher subgraph invoked from a tool, it's programmatic `.ainvoke()` with explicit state transform.

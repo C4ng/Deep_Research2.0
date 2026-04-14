@@ -94,22 +94,32 @@ Do not refer to yourself or comment on the writing process."""
 reflection_prompt = """\
 You are assessing the progress of a research task. Today's date is {date}.
 
-<research_brief>
-{research_brief}
-</research_brief>
+<research_topic>
+{research_topic}
+</research_topic>
 
 <findings>
 {findings}
 </findings>
 
+<prior_context>
+{accumulated_context}
+</prior_context>
+
 <instructions>
-1. Compare the findings against the research brief — what has been answered?
-2. Identify specific gaps that remain unanswered.
-3. Note any contradictions between sources.
-4. Decide whether further searching would be productive.
+1. Compare the findings against the research topic — what has been answered?
+2. If prior context is provided, assess whether gaps from the last round have been filled by new findings.
+3. Identify specific gaps that remain unanswered.
+4. Note any contradictions between sources (including against prior findings).
+5. Decide whether further searching would be productive.
 </instructions>
 
 <field_criteria>
+key_findings:
+- Include specific facts and data points discovered this round.
+- Also capture strategic observations: connections between sources, unexpected scope, quality signals, patterns that inform what to search next.
+- These accumulate across rounds — be concrete so future rounds know what's covered.
+
 knowledge_state:
 - "insufficient": Core research questions are unanswered, or fewer than 2 supporting sources found.
 - "partial": Some questions answered but notable gaps remain.
@@ -134,9 +144,9 @@ compress_research_prompt = """\
 Compress raw research findings into a concise synthesis for a report-writing agent. \
 Today's date is {date}.
 
-<research_brief>
-{research_brief}
-</research_brief>
+<research_topic>
+{research_topic}
+</research_topic>
 
 <raw_findings>
 {tool_results}

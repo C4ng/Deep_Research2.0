@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableConfig
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
 from deep_research.prompts import compress_research_prompt
-from deep_research.state import AgentState
+from deep_research.state import ResearcherState
 
 logger = logging.getLogger(__name__)
 
@@ -22,11 +22,13 @@ logger = logging.getLogger(__name__)
 COMPRESSION_THRESHOLD = 2000
 
 
-async def summarize_research(state: AgentState, config: RunnableConfig) -> dict:
+async def summarize_research(state: ResearcherState, config: RunnableConfig) -> dict:
     """Compress accumulated tool results into concise research notes.
 
     Extracts raw ToolMessage content from messages, compresses via
-    the summarization model, and writes to notes for the report node.
+    the summarization model, and writes to notes for downstream use.
+    Passes accumulated_findings to the prompt so the summarizer knows
+    what reflection identified as important — helps prioritize.
     """
     # Extract raw tool results from messages
     tool_results = "\n\n".join(
@@ -60,11 +62,23 @@ async def summarize_research(state: AgentState, config: RunnableConfig) -> dict:
         .with_config(configurable=model_config)
     )
 
+    # Format accumulated findings as prioritization hints
+    accumulated = state.get("accumulated_findings", [])
+    findings_hint = ""
+    if accumulated:
+        findings_hint = (
+            "\n\n<key_findings>\n"
+            "The following findings were identified as important during research. "
+            "Prioritize preserving information related to these:\n"
+            + "\n".join(f"- {f}" for f in accumulated)
+            + "\n</key_findings>"
+        )
+
     prompt = compress_research_prompt.format(
-        research_brief=state["research_brief"],
+        research_topic=state["research_topic"],
         tool_results=tool_results,
         date=datetime.now().strftime("%B %d, %Y"),
-    )
+    ) + findings_hint
 
     logger.info("Compressing %d chars of tool results", len(tool_results))
     response = await model.ainvoke([HumanMessage(content=prompt)])

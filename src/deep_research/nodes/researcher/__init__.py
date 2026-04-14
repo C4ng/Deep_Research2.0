@@ -19,10 +19,10 @@ from langgraph.graph import END, START, StateGraph
 from deep_research.nodes.researcher.reflect import reflect
 from deep_research.nodes.researcher.researcher import researcher, researcher_tools
 from deep_research.nodes.researcher.summarizer import summarize_research
-from deep_research.state import AgentState
+from deep_research.state import ResearcherState
 
 # Build the researcher subgraph
-researcher_builder = StateGraph(AgentState)
+researcher_builder = StateGraph(ResearcherState)
 researcher_builder.add_node("researcher", researcher)
 researcher_builder.add_node("researcher_tools", researcher_tools)
 researcher_builder.add_node("reflect", reflect)

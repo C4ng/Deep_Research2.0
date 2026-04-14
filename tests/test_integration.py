@@ -21,8 +21,6 @@ async def test_full_pipeline_produces_report():
             "research_brief": "",
             "notes": "",
             "final_report": "",
-            "research_iterations": 0,
-            "last_reflection": "",
         },
         config={"configurable": {}},
     )
@@ -41,6 +39,3 @@ async def test_full_pipeline_produces_report():
     brief = result["research_brief"]
     assert "Title:" in brief
     assert "Research Questions:" in brief
-
-    # Reflection loop should have run at least once
-    assert result["research_iterations"] >= 1, "Should have at least one reflection cycle"

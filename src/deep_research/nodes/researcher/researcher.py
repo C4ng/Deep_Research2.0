@@ -9,13 +9,13 @@ import asyncio
 import logging
 from datetime import datetime
 
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
 from deep_research.prompts import research_system_prompt
-from deep_research.state import AgentState
+from deep_research.state import ResearcherState
 from deep_research.tools.registry import get_all_tools
 
 logger = logging.getLogger(__name__)
@@ -30,11 +30,16 @@ async def _execute_tool_safely(tool, args, config):
         return f"Error executing tool: {e}"
 
 
-async def researcher(state: AgentState, config: RunnableConfig) -> dict:
+async def researcher(state: ResearcherState, config: RunnableConfig) -> dict:
     """Invoke the research model with tools bound.
 
     Single responsibility: one LLM call. Tool execution is handled
     by researcher_tools, routing by reflect.
+
+    Messages for the LLM call consist of a single SystemMessage carrying
+    role, instructions, the assigned topic, tool limits, and prior
+    reflection (if round 2+). No HumanMessage — the researcher is invoked
+    programmatically, not by a user.
     """
     configurable = Configuration.from_runnable_config(config)
     tools = await get_all_tools(config)
@@ -59,22 +64,10 @@ async def researcher(state: AgentState, config: RunnableConfig) -> dict:
         .with_config(configurable=model_config)
     )
 
-    # Build messages for the LLM call.
-    # System/Human messages are constructed locally (not stored in state),
-    # so we always build them here. On subsequent rounds (after reflection),
-    # drop prior AI/Tool messages — reflection already captured key findings
-    # and the full history stays in state for compress.
-    messages = state.get("messages", [])
-    is_subsequent_round = state.get("research_iterations", 0) > 0
-
-    if is_subsequent_round:
-        messages = [
-            m for m in messages if isinstance(m, HumanMessage)
-        ]
-
+    # Build system prompt with topic, limits, and reflection context
     system_parts = [
         research_system_prompt.format(
-            topic=state["research_brief"],
+            topic=state["research_topic"],
             date=datetime.now().strftime("%B %d, %Y"),
             max_searches_per_round=configurable.max_searches_per_round,
         )
@@ -86,10 +79,14 @@ async def researcher(state: AgentState, config: RunnableConfig) -> dict:
             f"\n<prior_reflection>\n{last_reflection}\n</prior_reflection>"
         )
 
+    # SystemMessage carries topic + instructions. HumanMessage is required
+    # by some providers (Gemini requires non-empty contents).
+    # Prior AI/Tool messages are not included — reflection already captured
+    # key findings into accumulators; full history stays in state for the summarizer.
     messages = [
         SystemMessage(content="\n".join(system_parts)),
-        HumanMessage(content=f"Please research the following topic:\n\n{state['research_brief']}"),
-    ] + messages
+        HumanMessage(content="Begin researching the topic described above."),
+    ]
 
     logger.info("Researcher invoking LLM (%d messages in context)", len(messages))
     response = await model.ainvoke(messages)
@@ -100,7 +97,7 @@ async def researcher(state: AgentState, config: RunnableConfig) -> dict:
     return {"messages": [response]}
 
 
-async def researcher_tools(state: AgentState, config: RunnableConfig) -> dict:
+async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> dict:
     """Execute tool calls in parallel, then route to reflect.
 
     Always routes to reflect via edge — no inner loop.

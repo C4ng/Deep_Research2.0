@@ -1,9 +1,11 @@
 """State definitions for the Deep Research graph.
 
-Grows incrementally — this is the minimal version for Increment 1.
-Increment 3 adds ResearcherState and SupervisorState.
+AgentState: top-level state for the main graph.
+ResearcherState: isolated state for the researcher subgraph.
+Increment 3 adds SupervisorState.
 """
 
+import operator
 from typing import Annotated
 
 from langgraph.graph import add_messages
@@ -16,21 +18,44 @@ class AgentState(TypedDict):
     messages: Annotated[list, add_messages]
     """Conversation history (user messages + internal messages)."""
 
-    # Fields below use last-write-wins (no reducer) — fine for Increment 1
-    # where each field is written by exactly one node. Increment 3 adds
-    # custom reducers when multiple researchers write to shared state.
-
     research_brief: str
     """Structured research brief generated from the user query."""
 
     notes: str
-    """Accumulated research findings from the researcher."""
+    """Accumulated research findings (combined from supervisor or single researcher)."""
 
     final_report: str
     """The final markdown report output."""
+
+
+class ResearcherState(TypedDict):
+    """State for the researcher subgraph — isolated per researcher instance.
+
+    Each researcher gets its own state with accumulator fields that persist
+    structured knowledge across reflection rounds.
+    """
+
+    messages: Annotated[list, add_messages]
+    """Tool-calling messages (AIMessage + ToolMessage pairs)."""
+
+    research_topic: str
+    """Assigned subtopic to research (not the full brief)."""
 
     research_iterations: int
     """Reflection cycle count, incremented by the reflect node."""
 
     last_reflection: str
-    """Serialized Reflection output for the researcher to read on next round."""
+    """Formatted reflection guidance for the next round (overwrite)."""
+
+    # Accumulated across reflection rounds (append reducers)
+    accumulated_findings: Annotated[list[str], operator.add]
+    """Key findings accumulated across all reflection rounds."""
+
+    accumulated_contradictions: Annotated[list[str], operator.add]
+    """Contradictions discovered across all reflection rounds."""
+
+    current_gaps: list[str]
+    """Current gaps remaining — overwritten each round (latest assessment)."""
+
+    notes: str
+    """Summarizer output — compressed research notes."""
