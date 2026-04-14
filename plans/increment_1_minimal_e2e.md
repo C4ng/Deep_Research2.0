@@ -402,7 +402,7 @@ tests/
 ## What this increment does NOT include (deferred)
 - Researcher reflection loop (Increment 2)
 - Research compression (Increment 2)
-- Supervisor / multi-topic (Increment 3)
+- Coordinator / multi-topic (Increment 3)
 - Separate ResearcherState for message isolation (Increment 3)
 - Clarification node (Increment 4)
 - Multi-provider model support + config resolver (Increment 4)

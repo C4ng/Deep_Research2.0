@@ -203,7 +203,7 @@ src/deep_research/
 
 ## Observations from integration testing
 
-**Researcher searches one topic per round**: With the full research brief (7+ questions), the model picks one angle per round. Expected — Increment 3's supervisor decomposes into subtopics, each researcher gets a focused topic.
+**Researcher searches one topic per round**: With the full research brief (7+ questions), the model picks one angle per round. Expected — Increment 3's coordinator decomposes into subtopics, each researcher gets a focused topic.
 
 **Compression ratio is aggressive (7% vs target 30%)**: 132k chars → 8.8k chars. The broad topic produces overlapping search results with high redundancy. With focused subtopics in Increment 3, searches will overlap less and compression ratio should approach the 30% target.
 
@@ -221,6 +221,6 @@ src/deep_research/
 ## What this increment does NOT include (deferred)
 - Dead-end detection: comparing `missing_info` across rounds (Increment 5)
 - Contradiction resolution: explicit routing when contradictions found (Increment 5)
-- Supervisor-level contradictions across topics (Increment 3)
-- Supervisor low-confidence handling (Increment 3)
+- Coordinator-level contradictions across topics (Increment 3)
+- Coordinator low-confidence handling (Increment 3)
 - Two-tier notes: raw + compressed (Increment 6)
