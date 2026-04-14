@@ -1,22 +1,23 @@
 # Increment 4 — Question Stage (Clarification + Scoping)
 **Goal**: Well-formed research questions through user interaction, with adaptive routing based on question needs.
-**Status**: Planning
+**Status**: In Progress (steps 0-4 done)
 
 ## Overview
 
-The question stage sits at the front of the pipeline, before research begins. It has three responsibilities:
+The question stage sits at the front of the pipeline, before research begins. It has four responsibilities:
 
 1. **Clarification**: Resolve ambiguity by asking the user questions (optional, config-gated)
-2. **Brief generation**: Transform the (now-clear) user query into a single well-articulated research question — NOT a decomposed list of subtopics (that's the coordinator's job)
-3. **Routing**: Simple questions go directly to a single researcher, bypassing the coordinator entirely
+2. **Brief generation**: Transform the (now-clear) user query into a research question with strategic approach guidance — NOT decomposed into exact topics (that's the coordinator's job)
+3. **Human review**: Let the user review and modify the research plan before resources are spent
+4. **Routing**: Simple questions go directly to a single researcher, bypassing the coordinator entirely
 
 **Main graph (after)**:
 ```
-clarify → write_brief → [simple?] → researcher_subgraph → final_report
-                         [else]   → coordinator_subgraph → final_report
+clarify → write_brief → [human review] → [simple?] → researcher_subgraph → final_report
+                                          [else]   → coordinator_subgraph → final_report
 ```
 
-Where `clarify` may exit to `__end__` (returning a question to the user) or proceed to `write_brief`.
+Where `clarify` may exit to `__end__` (returning a question to the user) or proceed to `write_brief`. Human review is an interrupt point where the user can modify the brief.
 
 ---
 
@@ -52,9 +53,13 @@ The coordinator currently always decomposes into ~5 topics regardless of the que
 
 **Simple questions bypass the coordinator**: The `write_brief` node assesses whether the question is simple enough for a single researcher. If yes, it sets `is_simple=True` in state, and a conditional edge routes directly to the researcher subgraph. The researcher subgraph already exists — the coordinator invokes it via `dispatch_research`. We just invoke it directly from the main graph with a thin state adapter.
 
-**No pre-defined question type enum or research parameters**: Instead of classifying questions into fixed types (factual, survey, comparison, etc.) and mapping to strategy tables, the coordinator reasons freely about what kind of research the question needs. Its prompt is updated to think deliberately about approach before decomposing — how many angles, breadth vs depth, what each researcher should cover. No external "strategy advisor" — the coordinator does its job.
+**Brief includes strategic guidance**: The research brief is not just "what to research" but also "how to approach it" — angles to cover, breadth vs depth preference, priorities. This is a strategy document the user can review and modify. The coordinator reads this guidance and decides exact topic decomposition. No separate strategy node needed.
 
-**Simple vs non-simple is the only routing decision**: The only code-level orchestration is the binary gate: simple → single researcher, else → coordinator. Everything beyond that is the coordinator's judgment. This keeps the architecture clean — one routing decision, not a strategy pipeline.
+**Human review after brief generation**: The brief is the highest-leverage point for user intervention — it shapes all downstream research before resources are spent. An interrupt after `write_brief` lets the user see the research plan (question + strategy), modify angles, add perspectives, or adjust priorities. This happens in the main graph (simple interrupt), not inside the coordinator subgraph.
+
+**Coordinator executes strategy, doesn't create it**: The coordinator reads the brief's strategic guidance and decomposes into exact topics accordingly. It no longer reasons about question type or approach from scratch — that's already in the brief. For follow-up rounds (gap-filling, contradiction resolution), the coordinator operates autonomously.
+
+**Simple vs non-simple is the only routing decision**: The only code-level orchestration is the binary gate: simple → single researcher, else → coordinator. Everything beyond that is the coordinator's judgment.
 
 ---
 
@@ -69,18 +74,23 @@ class ClarifyOutput(BaseModel):
     verification: str             # acknowledgement before research (empty if clarifying)
 ```
 
-### ResearchBrief (simplified)
+### ResearchBrief (reformed)
 
 ```python
 class ResearchBrief(BaseModel):
     title: str                    # concise title
-    research_question: str        # single well-articulated research question (paragraph)
+    research_question: str        # detailed research question with constraints
+    approach: str                 # strategic guidance: angles, breadth/depth, priorities
     is_simple: bool               # whether a single researcher can handle this
 ```
 
-Drops `research_questions: list[str]` and `key_topics: list[str]`. The coordinator handles decomposition.
+Drops `research_questions: list[str]` and `key_topics: list[str]`. The coordinator handles exact decomposition.
 
-`is_simple` drives routing — the LLM decides as part of brief generation whether this question needs multi-topic decomposition or can be handled by one researcher. Criteria: single factual lookup, narrow scope, one clear answer expected.
+`research_question` captures what to research with all user constraints preserved.
+
+`approach` captures how to approach it — what kind of question this is, what angles matter, breadth vs depth, priorities. This is the strategy the coordinator follows. Example: "This is a broad survey. Cover distinct facets: technology advancements, key players, real-world applications, challenges. Breadth over depth. Market/investment data would be valuable context."
+
+`is_simple` drives routing — true for narrow, factual queries a single researcher can handle.
 
 ---
 
@@ -110,12 +120,34 @@ User message(s)
   │     → user provides answer → graph re-invoked → clarify sees full history
   └─ [need_clarification=false] → verification message + proceed
        → write_brief node
-            → LLM call: generate ResearchBrief (title + research_question + is_simple)
+            → LLM call: ResearchBrief (title + research_question + approach + is_simple)
             → state: {research_brief: str, is_simple: bool}
+            → [human review interrupt — user can modify the brief]
        → conditional edge
             ├─ [is_simple=true] → researcher adapter → researcher_subgraph → final_report
             └─ [is_simple=false] → coordinator_subgraph → final_report
 ```
+
+### Brief as strategy document
+
+The `research_brief` string stored in state includes both the question and the approach:
+```
+Title: Quantum Computing in 2025
+
+I want a comprehensive overview of the current state of quantum computing
+in 2025, covering technology, key players, applications, and challenges.
+No constraints on geography or specific companies. Prioritize recent
+developments and concrete data over speculation.
+
+Approach: This is a broad survey. Cover distinct facets rather than going
+deep on any single one. Important angles: technology advancements, who's
+driving it, where it's being used, what's holding it back.
+Market/investment data would be valuable context.
+```
+
+The user sees this at the interrupt point and can modify it — add angles,
+remove irrelevant ones, adjust priorities. The coordinator reads the
+(possibly modified) brief and decides exact topic decomposition.
 
 ### Simple question path
 
@@ -124,160 +156,109 @@ For `is_simple=true`, a thin adapter node maps `AgentState` → `ResearcherState
 - Initialize empty accumulator fields
 - On return: `ResearcherState.notes` → `AgentState.notes`
 
-The adapter is a simple function, not a subgraph. The researcher subgraph is invoked programmatically (like `dispatch_research` does) and results are written back to `AgentState`.
+The adapter is a simple function, not a subgraph. The researcher subgraph
+is invoked programmatically (like `dispatch_research` does) and results are
+written back to `AgentState`.
 
 ---
-
-## Coordinator Prompt Update
-
-The coordinator prompt gets a strategic reasoning instruction. Instead of pre-defined types or parameters, we ask the coordinator to think deliberately about approach:
-
-```
-<task>
-Read the research brief below and determine the right research approach.
-
-Before dispatching researchers, think about what kind of question this is
-and what research strategy fits. Consider how many distinct angles need
-independent investigation, whether the question needs breadth (many topics,
-surface-level) or depth (fewer topics, thorough), and what each researcher
-should focus on.
-
-Then decompose into focused subtopics and dispatch researchers accordingly.
-</task>
-```
-
-This replaces the current "decompose it into focused subtopics" instruction with a deliberate reasoning step. The coordinator naturally adapts — a comparison question gets 2-3 researchers per subject, a survey gets 4-5 covering different facets, an analysis gets fewer but deeper researchers.
 
 ---
 
 ## Steps
 
-### Step 0 — Simplify ResearchBrief schema + update brief prompt
+### Step 0 — Simplify ResearchBrief schema + update brief prompt ✅
 
 Reform the brief to produce a single research question instead of decomposed subtopics.
 
-**models.py**:
-- Change `ResearchBrief`: drop `research_questions: list[str]` and `key_topics: list[str]`, add `research_question: str`
-- Keep `title: str` (used in report generation and logging)
-
-**prompts.py**:
-- Rewrite `research_brief_prompt`: instruct to produce a detailed, specific research question in first person. Key guidelines:
-  - Maximize specificity — include all known user preferences and constraints
-  - Fill unstated but necessary dimensions as open-ended (don't invent, state as flexible)
-  - Avoid unwarranted assumptions
-  - If specific sources should be prioritized, include them
-  - If query is in a specific language, note to prioritize sources in that language
-  - This is the sole input the coordinator sees — be thorough
-
-**nodes/brief.py**:
+- `ResearchBrief`: drop `research_questions[]` and `key_topics[]`, add `research_question: str`
+- Rewrite `research_brief_prompt` with new guidelines (specificity, open-ended dimensions, no assumptions)
 - Update `write_research_brief` to format the new schema
-- `brief_str` becomes: `f"Title: {brief.title}\n\n{brief.research_question}"`
+- Update tests
 
-**Tests**:
-- Update any tests that depend on `research_questions` or `key_topics` fields
+### Step 1 — Add is_simple routing + researcher adapter ✅
 
-### Step 1 — Add is_simple routing + researcher adapter
+Simple questions bypass the coordinator and go directly to a single researcher.
 
-Add the simple question bypass path.
+- Add `is_simple: bool` to `ResearchBrief` and `AgentState`
+- Add `route_by_complexity` conditional edge after `write_brief`
+- Add `run_single_researcher` adapter in `graph.py`
+- Tests for routing function
+
+### Step 2 — Update coordinator prompt with strategy examples ✅
+
+Add few-shot examples showing how different question types map to different decomposition strategies.
+
+- Coordinator prompt instruction 1: examples for comparison, survey, analysis, pros/cons
+- Updated trigger message for round 1
+
+### Step 3 — Add ClarifyOutput schema + clarify prompt ✅
+
+- `ClarifyOutput` schema, `clarify_prompt`, `allow_clarification` config
+
+### Step 4 — Implement clarify node + wire into graph ✅
+
+- `clarify_with_user` node with graph exit pattern
+- Wired: `START → clarify → write_brief → ...`
+
+### Step 5 — Add approach field to ResearchBrief
+
+Enrich the brief with strategic guidance so the user can review and modify the research plan.
 
 **models.py**:
-- Add `is_simple: bool` to `ResearchBrief`
+- Add `approach: str` to `ResearchBrief` — strategic guidance describing what kind of question this is, what angles matter, breadth vs depth, priorities
 
 **prompts.py**:
-- Add `is_simple` criteria to the brief prompt: "Determine if this is a simple question that a single researcher can handle — a narrow, factual query with one clear answer expected. If so, set is_simple to true."
-
-**state.py**:
-- Add `is_simple: bool` to `AgentState` (default False)
+- Update `research_brief_prompt`: add instruction to generate an approach section. Guidelines:
+  - Think about what kind of research this question needs
+  - Identify the important angles/facets to cover
+  - State whether breadth or depth is more important
+  - Note any priorities or special considerations
+  - This is guidance for the coordinator — not an exact topic list
 
 **nodes/brief.py**:
-- Return `is_simple` from the brief alongside `research_brief`
+- Include `approach` in the formatted `brief_str`:
+  `f"Title: {brief.title}\n\n{brief.research_question}\n\nApproach: {brief.approach}"`
+
+### Step 6 — Remove strategy reasoning from coordinator prompt
+
+Now that strategic guidance lives in the brief, the coordinator doesn't need to reason about strategy from scratch. It reads the brief (which includes the approach) and decomposes accordingly.
+
+**prompts.py**:
+- Remove the few-shot strategy examples from `coordinator_system_prompt` instruction 1
+- Replace with: "Read the research brief, including its approach guidance, and decompose into focused subtopics accordingly."
+- Keep instructions 2-5 (dispatch mechanics, complementary topics, prior research, no summary)
+
+### Step 7 — Add human review interrupt after write_brief
+
+Add an interrupt point so the user can review and modify the research brief before research begins.
 
 **graph/graph.py**:
-- Add routing function after `write_brief`:
-  ```python
-  def route_by_complexity(state: AgentState) -> str:
-      return "researcher" if state.get("is_simple", False) else "coordinator"
-  ```
-- Add `researcher` node — thin adapter that invokes `researcher_subgraph` directly:
-  ```python
-  async def run_single_researcher(state: AgentState, config: RunnableConfig) -> dict:
-      initial_state = {
-          "messages": [],
-          "research_topic": state["research_brief"],
-          "research_iterations": 0,
-          "last_reflection": "",
-          "accumulated_findings": [],
-          "accumulated_contradictions": [],
-          "current_gaps": [],
-          "final_knowledge_state": "",
-          "notes": "",
-      }
-      result = await researcher_subgraph.ainvoke(initial_state, config)
-      return {"notes": result["notes"]}
-  ```
-- Conditional edge: `write_brief` → `route_by_complexity` → (`researcher` | `coordinator`)
-- Both paths converge on `final_report`
-
-### Step 2 — Update coordinator prompt for strategic reasoning
-
-Update the coordinator to think deliberately about research approach.
-
-**prompts.py**:
-- Revise `coordinator_system_prompt` task section: before decomposing, reason about what kind of question this is and what approach fits. Think about how many angles, breadth vs depth, what each researcher should cover.
-- Remove the static `{max_research_topics}` from the instruction text (keep the config as a hard cap but don't advertise a number the coordinator should target). Instead: "Dispatch as many researchers as the question genuinely needs — a focused comparison may need 2-3, a broad survey may need more."
-
-**nodes/coordinator/coordinator.py**:
-- Update prompt formatting if template variables changed
-
-### Step 3 — Add ClarifyOutput schema + clarify prompt
-
-**models.py**:
-- Add `ClarifyOutput(need_clarification, question, verification)`
-
-**prompts.py**:
-- Add `clarify_prompt`: assess whether clarification is needed based on message history. Guidelines:
-  - If acronyms, abbreviations, or unknown terms exist, ask
-  - If scope is genuinely ambiguous (could mean very different research directions), ask
-  - If message history shows a prior clarifying exchange, almost never ask again
-  - Don't ask for unnecessary information or information already provided
-  - When not clarifying, provide a verification message summarizing understanding
-  - Be concise — one well-structured question, not an interrogation
+- Add interrupt after `write_brief` node using LangGraph's `interrupt()` mechanism
+- The interrupt surfaces the `research_brief` string to the user
+- The user can: approve as-is, or modify the brief (edit text directly)
+- On resume, the (possibly modified) brief flows to routing → coordinator/researcher
+- Make this config-gated (`allow_human_review: bool`, default: true for interactive, false for programmatic)
 
 **configuration.py**:
-- Add `allow_clarification: bool = Field(default=True)`
+- Add `allow_human_review: bool = Field(default=True)`
 
-### Step 4 — Implement clarify node + wire into graph
+**Notes on interrupt pattern**: LangGraph's `interrupt()` pauses the graph and returns the interrupt value to the caller. The caller presents it to the user, collects their input, and resumes with `Command(resume=...)`. This is different from the clarify pattern (graph exit + re-invocation) — interrupt preserves graph position.
 
-**nodes/clarify.py**:
-- `clarify_with_user(state, config)` node
-- If `allow_clarification` is false: `Command(goto="write_brief")`
-- Otherwise: call LLM with structured output `ClarifyOutput`
-- If `need_clarification`: `Command(goto="__end__", update={"messages": [AIMessage(question)]})`
-- If not: `Command(goto="write_brief", update={"messages": [AIMessage(verification)]})`
-
-**graph/graph.py**:
-- Add `clarify` node before `write_brief`
-- `START → clarify` (clarify uses Command for routing to `write_brief` or `__end__`)
-- Rest of graph unchanged: `write_brief → route → (researcher | coordinator) → final_report`
-
-**Notes on re-invocation**: When the graph exits for clarification, the caller appends the user's answer to messages and re-invokes. The graph starts from `clarify` again, which now sees the full message history including the answer. The clarify node re-evaluates and either asks another question (rare) or proceeds.
-
-### Step 5 — Tests
+### Step 8 — Tests
 
 **Unit tests** (no API calls):
 - `ClarifyOutput` schema validation
-- `ResearchBrief` new schema (single `research_question` + `is_simple` fields)
+- `ResearchBrief` new schema (research_question + approach + is_simple)
 - Clarify node routing: clarification needed → END, not needed → write_brief
 - Clarify node skip: `allow_clarification=false` → straight to write_brief
 - Route function: `is_simple=true` → researcher, `is_simple=false` → coordinator
-- Researcher adapter: maps AgentState → ResearcherState correctly
+- Brief formatting includes approach section
 
 **Integration test**:
-- Clear, simple question: verify flows clarify → write_brief → researcher → report (no coordinator)
 - Clear, complex question: verify flows clarify → write_brief → coordinator → report
-- Verify brief is a single research question (not decomposed list)
-- Verify coordinator decomposes effectively from the simplified brief
-- Verify coordinator reasons about strategy (check traces for deliberate approach reasoning)
+- Verify brief includes approach section with strategic guidance
+- Verify coordinator decomposes based on the brief's approach (check traces)
+- Simple question: verify bypasses coordinator
 
 ---
 
@@ -287,4 +268,6 @@ Update the coordinator to think deliberately about research approach.
 
 2. **Should `is_simple` be more nuanced?** Currently binary. We could add a middle ground — "focused" questions that need the coordinator but with constrained decomposition. Start simple, add nuance if the binary gate proves too coarse.
 
-3. **Coordinator strategy quality**: After updating the coordinator prompt to reason about strategy, we need to verify via traces that it actually adapts (e.g., dispatches 2 researchers for a comparison, 5 for a broad survey). If it still defaults to ~5 every time, the prompt needs further calibration.
+3. **Human review UX**: The interrupt surfaces the brief as text. How should the user modify it? Direct text editing is simplest. A structured form (edit approach separately from question) is more guided but more complex. Start with text.
+
+4. **Interrupt vs graph exit for human review**: Using `interrupt()` (preserves graph position) is cleaner than graph exit (requires re-invocation). But it requires the caller to support LangGraph's interrupt/resume protocol. Clarification uses graph exit because the user's response is a new message; human review uses interrupt because the user is editing existing state, not adding a message.
