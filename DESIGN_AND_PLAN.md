@@ -270,6 +270,7 @@ src/deep_research/
 
 - Dead-end detection: compare `missing_info` across reflection rounds → reformulate
 - Contradiction resolution: non-empty `contradictions` → targeted follow-up searches
+- Multi-source cross-referencing: findings confirmed by multiple sources carry higher confidence; corroboration tracking in reflection (complement to contradiction detection — same mechanism, opposite signal)
 - Coordinator handles low-confidence researcher returns (reassign or accept partial)
 - Light review pass on final report (claims vs sources check)
 - Token-limit retry with progressive truncation

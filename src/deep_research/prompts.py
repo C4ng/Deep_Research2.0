@@ -146,6 +146,10 @@ Citation rules:
 Do not refer to yourself or comment on the writing process."""
 
 
+# TODO(calibration): key_findings field_criteria says "specific facts and data points"
+# which may push toward granular detail rather than high-level insights. Observe what
+# the LLM produces and calibrate — key findings should be the important discoveries
+# that answer the research question, not a laundry list of every data point.
 researcher_reflection_prompt = """\
 You are assessing the progress of a research task. Today's date is {date}.
 
@@ -180,6 +184,8 @@ You are assessing the progress of a research task. Today's date is {date}.
 <field_criteria>
 key_findings:
 - Include specific facts and data points discovered this round.
+- Reference sources using their [source_id] tags from the search results
+  (e.g., "Market reached $3.77B [a1b2c3d4]").
 - Also capture strategic observations: connections between sources, unexpected
   scope, quality signals.
 - These accumulate across rounds — be concrete so future rounds know what's covered.
@@ -206,7 +212,8 @@ missing_info:
   but stay at the topic's level of detail — not niche sub-questions.
 
 contradictions:
-- Cite which sources disagree and on what specific point.
+- Cite which sources disagree using their [source_id] tags
+  (e.g., "[a1b2c3d4] says X, [e5f6a7b8] says Y").
 
 next_queries:
 - Target the gaps listed in missing_info. Do not repeat prior searches.
@@ -226,7 +233,9 @@ Today's date is {date}.
 </raw_findings>
 
 <instructions>
-1. Preserve all citations and source URLs — the report needs them.
+1. Reference each finding by its source ID (e.g., [a1b2c3d4]). Source IDs
+   appear in the raw findings as [source_id] tags — preserve them exactly.
+   Do NOT invent or modify source IDs.
 2. Deduplicate overlapping information across sources.
 3. Keep specific facts, data points, statistics, and direct quotes.
 4. Remove boilerplate, navigation text, and irrelevant content.
