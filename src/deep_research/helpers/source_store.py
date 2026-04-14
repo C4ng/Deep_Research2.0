@@ -1,0 +1,164 @@
+"""File-based source store for citation tracking.
+
+Each URL encountered during research gets one file on disk with metadata
+(url, title, source_id) and content (summary + key excerpts). Source IDs
+are deterministic (URL hash), providing natural dedup across rounds and
+researchers.
+
+The store is the single source of truth for citations. At report time,
+the store resolves [sN] references to actual URLs.
+"""
+
+import hashlib
+import logging
+import tempfile
+from pathlib import Path
+
+from langchain_core.runnables import RunnableConfig
+
+from deep_research.configuration import Configuration
+
+logger = logging.getLogger(__name__)
+
+# Cached temp directory for when sources_dir is not configured
+_default_sources_dir: Path | None = None
+
+
+def generate_source_id(url: str) -> str:
+    """Generate a deterministic source ID from a URL.
+
+    Uses md5 hash truncated to 8 hex chars. Deterministic: same URL
+    always produces the same ID, across rounds and researchers.
+    """
+    return hashlib.md5(url.encode()).hexdigest()[:8]
+
+
+def write_source(
+    sources_dir: Path,
+    source_id: str,
+    url: str,
+    title: str,
+    summary: str,
+    key_excerpts: str,
+) -> bool:
+    """Write a source file if it doesn't already exist.
+
+    Returns True if the file was written, False if it already existed (dedup).
+    """
+    path = sources_dir / f"{source_id}.md"
+    if path.exists():
+        logger.debug("Source %s already exists, skipping write", source_id)
+        return False
+
+    content = (
+        f"---\n"
+        f"source_id: {source_id}\n"
+        f"url: {url}\n"
+        f"title: {title}\n"
+        f"---\n"
+        f"<summary>\n{summary}\n</summary>\n\n"
+        f"<key_excerpts>\n{key_excerpts}\n</key_excerpts>\n"
+    )
+    path.write_text(content, encoding="utf-8")
+    logger.debug("Wrote source %s: %s", source_id, url)
+    return True
+
+
+def read_source(sources_dir: Path, source_id: str) -> dict | None:
+    """Read a source file and return its metadata and content.
+
+    Returns a dict with keys: source_id, url, title, content.
+    Returns None if the file doesn't exist.
+    """
+    path = sources_dir / f"{source_id}.md"
+    if not path.exists():
+        return None
+
+    text = path.read_text(encoding="utf-8")
+    meta, content = _parse_frontmatter(text)
+    return {
+        "source_id": meta.get("source_id", source_id),
+        "url": meta.get("url", ""),
+        "title": meta.get("title", ""),
+        "content": content,
+    }
+
+
+def build_source_map(sources_dir: Path) -> dict[str, dict]:
+    """Read all source files and return a mapping of source_id to metadata.
+
+    Returns {source_id: {url, title}} for citation resolution at report time.
+    """
+    source_map: dict[str, dict] = {}
+    if not sources_dir.exists():
+        return source_map
+
+    for path in sources_dir.glob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        meta, _ = _parse_frontmatter(text)
+        sid = meta.get("source_id", path.stem)
+        source_map[sid] = {
+            "url": meta.get("url", ""),
+            "title": meta.get("title", ""),
+        }
+    return source_map
+
+
+def get_sources_dir(config: RunnableConfig | None = None) -> Path:
+    """Get or create the sources directory.
+
+    If sources_dir is set in Configuration, use it.
+    Otherwise, create a temp directory (cached per process).
+    """
+    global _default_sources_dir
+
+    configurable = Configuration.from_runnable_config(config)
+    if configurable.sources_dir:
+        path = Path(configurable.sources_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    if _default_sources_dir is None:
+        _default_sources_dir = Path(
+            tempfile.mkdtemp(prefix="deep_research_sources_")
+        )
+        logger.info("Created temp sources directory: %s", _default_sources_dir)
+    return _default_sources_dir
+
+
+def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
+    """Parse simple YAML-ish frontmatter from a source file.
+
+    Expects format:
+        ---
+        key: value
+        key: value
+        ---
+        body content
+
+    No external YAML library needed — frontmatter is always 3 fixed fields.
+    """
+    if not text.startswith("---"):
+        return {}, text
+
+    # Find the closing ---
+    end = text.find("---", 3)
+    if end == -1:
+        return {}, text
+
+    frontmatter_str = text[3:end].strip()
+    body = text[end + 3:].strip()
+
+    meta: dict[str, str] = {}
+    for line in frontmatter_str.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        colon = line.find(":")
+        if colon == -1:
+            continue
+        key = line[:colon].strip()
+        value = line[colon + 1:].strip()
+        meta[key] = value
+
+    return meta, body

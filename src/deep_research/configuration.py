@@ -120,6 +120,12 @@ class Configuration(BaseModel):
         description="Maximum coordinator reflection cycles before forcing exit",
     )
 
+    # Source store
+    sources_dir: str = Field(
+        default="",
+        description="Directory for source files. If empty, auto-created temp directory.",
+    )
+
     # API keys — loaded from env via dotenv, not hardcoded
     tavily_api_key: str = Field(
         default="",
