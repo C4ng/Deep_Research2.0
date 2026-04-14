@@ -1,6 +1,6 @@
 # Increment 4 — Question Stage (Clarification + Scoping)
 **Goal**: Well-formed research questions through user interaction, with adaptive routing based on question needs.
-**Status**: In Progress (steps 0-4 done)
+**Status**: Complete ✅
 
 ## Overview
 
@@ -11,7 +11,7 @@ The question stage sits at the front of the pipeline, before research begins. It
 3. **Human review**: Let the user review and modify the research plan before resources are spent
 4. **Routing**: Simple questions go directly to a single researcher, bypassing the coordinator entirely
 
-**Main graph (after)**:
+**Main graph**:
 ```
 START → clarify → write_brief → researcher  → final_report → END
                               → coordinator → final_report → END
@@ -25,21 +25,21 @@ Both `clarify` and `write_brief` are user interaction nodes using the same graph
 
 ### Problem 1: Brief does topic decomposition (coordinator's job)
 
-Current `ResearchBrief` has `research_questions: list[str]` and `key_topics: list[str]`. The brief decomposes the query into subtopics, then the coordinator decomposes *again* from those subtopics into researcher assignments. This is redundant — the brief is prematurely structuring the problem.
+Original `ResearchBrief` had `research_questions: list[str]` and `key_topics: list[str]`. The brief decomposed the query into subtopics, then the coordinator decomposed *again*. This was redundant — the brief was prematurely structuring the problem.
 
-The brief should be a single, well-articulated question that preserves the user's intent, constraints, and explicitly marks what's unspecified. The coordinator is the one who decides how to decompose.
+The brief is now a single, well-articulated question that preserves the user's intent, constraints, and explicitly marks what's unspecified. The coordinator decides how to decompose.
 
 ### Problem 2: Ambiguous queries go straight to research
 
-"quantum computing" could mean anything: recent news? Investment opportunities? Technical deep-dive? For a PhD thesis or a blog post? The system currently guesses. A clarification step catches this before wasting research resources.
+"quantum computing" could mean anything. A clarification step catches ambiguity before wasting research resources.
 
 ### Problem 3: All queries get the same treatment
 
-A simple factual question ("What is the latest React version?") gets 5 researchers and multi-round reflection — massive overkill. The system should route simple questions directly to a single researcher, skipping coordinator overhead entirely.
+A simple factual question ("What is the latest React version?") got 5 researchers and multi-round reflection. Now `is_simple` routes these directly to a single researcher.
 
-### Problem 4: Coordinator doesn't reason about strategy
+### Problem 4: No user involvement before research
 
-The coordinator currently always decomposes into ~5 topics regardless of the question. It should think deliberately about what kind of question it's facing and what research approach fits — how many angles, breadth vs depth, what each researcher should focus on. This is the coordinator's job, not a separate strategy node's.
+The user had no chance to shape the research plan. Now the brief is a draft plan the user reviews and can modify — adding angles, adjusting priorities, or approving as-is.
 
 ---
 
@@ -47,17 +47,15 @@ The coordinator currently always decomposes into ~5 topics regardless of the que
 
 **Clarification is optional and conservative**: Gated by `allow_clarification` config (default: true). When enabled, the model is instructed to ask only when genuinely needed — acronyms, unclear scope, critical ambiguity. One clarifying question per invocation, almost never two. The user should feel helped, not interrogated.
 
-**Clarification uses graph exit pattern**: When clarification is needed, the node returns `Command(goto=END)` with the question as an AIMessage. The caller re-invokes the graph with the user's answer appended to messages. This works naturally with chat UIs and LangGraph's checkpointing.
+**Both nodes use the same graph-exit pattern**: Clarify and write_brief are user ↔ AI communication nodes using `Command(goto="__end__")`. Clarify exits with a question; write_brief exits with the draft plan. On re-invocation, each reads the full message history and decides whether to proceed or iterate. No `interrupt()` — the graph-exit + re-invocation pattern is simpler and works without a checkpointer.
 
-**Brief becomes a single research question**: Replace `ResearchBrief(title, research_questions, key_topics)` with a simpler schema. The brief is a detailed, well-articulated paragraph in first person, not a decomposed structure. Key guidelines: maximize specificity, fill unstated dimensions as open-ended, avoid unwarranted assumptions.
+**One prompt handles both fresh generation and revision**: The `research_brief_prompt` has optional `{prior_brief}` and `{feedback}` sections. When empty, it generates fresh. When populated, it revises. The LLM also sets `ready_to_proceed` to signal whether the user approved or requested changes — this drives routing without any heuristic code.
 
-**Brief includes strategic guidance**: The research brief is not just "what to research" but also "how to approach it" — angles to cover, breadth vs depth preference, priorities. This is a strategy document the user can review and modify. The coordinator reads this guidance and decides exact topic decomposition. No separate strategy node needed.
+**write_brief owns routing**: The brief node determines `is_simple` and `ready_to_proceed`, and routes directly via `Command`. No separate conditional edge, routing function, or review node. The node makes all decisions and routes itself.
 
-**Brief and clarify use the same interaction pattern**: Both are user ↔ AI communication nodes using the graph-exit pattern (`Command(goto="__end__")`). Clarify exits with a question; write_brief exits with the draft plan. On re-invocation, each reads the full message history (including prior output + user response) and decides whether to proceed or iterate. One unified prompt handles both fresh generation and revision — if prior brief + feedback exist in messages, the LLM revises; otherwise it generates from scratch.
+**Brief includes strategic guidance**: The `approach` field is not just what to research but how — angles to cover, breadth vs depth, priorities. The coordinator reads this as a starting point for decomposition. Strategy flows: brief approach → coordinator decomposition → researcher topic/context → search queries. The user can shape strategy by modifying the approach during review.
 
-**write_brief owns routing**: The brief node determines `is_simple` and routes directly via `Command(goto="researcher")` or `Command(goto="coordinator")`. No separate conditional edge or routing function needed — the node makes the decision and routes, same as clarify decides and routes.
-
-**Coordinator executes strategy, doesn't create it**: The coordinator reads the brief's strategic guidance and decomposes into exact topics accordingly. It no longer reasons about question type or approach from scratch — that's already in the brief. For follow-up rounds (gap-filling, contradiction resolution), the coordinator operates autonomously.
+**Coordinator executes strategy, doesn't create it**: The coordinator reads the brief's strategic guidance and decomposes into topics accordingly. It no longer reasons about question type or approach from scratch — that's already in the brief.
 
 **graph.py is pure orchestration**: Node registration, edges, compilation. No LLM calls, no prompts, no state mapping. All node logic lives in node modules.
 
@@ -65,7 +63,7 @@ The coordinator currently always decomposes into ~5 topics regardless of the que
 
 ## Schemas
 
-### ClarifyOutput (new)
+### ClarifyOutput
 
 ```python
 class ClarifyOutput(BaseModel):
@@ -74,7 +72,7 @@ class ClarifyOutput(BaseModel):
     verification: str             # acknowledgement before research (empty if clarifying)
 ```
 
-### ResearchBrief (reformed)
+### ResearchBrief
 
 ```python
 class ResearchBrief(BaseModel):
@@ -82,32 +80,66 @@ class ResearchBrief(BaseModel):
     research_question: str        # detailed research question with constraints
     approach: str                 # strategic guidance: angles, breadth/depth, priorities
     is_simple: bool               # whether a single researcher can handle this
+    ready_to_proceed: bool        # whether the user approved the brief or requested changes
 ```
 
-Drops `research_questions: list[str]` and `key_topics: list[str]`. The coordinator handles exact decomposition.
-
-`research_question` captures what to research with all user constraints preserved.
-
-`approach` captures how to approach it — what kind of question this is, what angles matter, breadth vs depth, priorities. This is the strategy the coordinator follows. Example: "This is a broad survey. Cover distinct facets: technology advancements, key players, real-world applications, challenges. Breadth over depth. Market/investment data would be valuable context."
-
-`is_simple` drives routing — true for narrow, factual queries a single researcher can handle.
+`ready_to_proceed` (default: False) is the LLM's routing signal. On a fresh brief it's False (needs review). When the user re-invokes, the LLM reads the prior brief + user message and sets it True (approval) or False (changes requested). This replaces any heuristic approval detection.
 
 ---
 
-## State Changes
+## Component Input/Output Map
 
-### AgentState
-
-```python
-class AgentState(TypedDict):
-    messages: Annotated[list, add_messages]
-    research_brief: str
-    is_simple: bool              # NEW — routing flag from brief generation
-    notes: str
-    final_report: str
+### clarify
+```
+IN:  messages: [HumanMessage(user query)]
+OUT: Command(goto="__end__")      → with question as AIMessage (needs clarification)
+     Command(goto="write_brief")  → with verification as AIMessage (clear question)
 ```
 
-`is_simple` drives the conditional edge after `write_brief`.
+### write_brief
+```
+IN:  messages: [Human(query), AI(verification), ...]
+     research_brief: "" or prior brief string
+     
+LLM: research_brief_prompt(messages, prior_brief, feedback)
+   → ResearchBrief(title, question, approach, is_simple, ready_to_proceed)
+
+OUT: Command(goto="__end__")       → first draft or revision with changes (review cycle)
+     Command(goto="researcher")    → approved + is_simple=True
+     Command(goto="coordinator")   → approved + is_simple=False
+```
+
+### coordinator
+```
+IN:  research_brief: "Title: ...\n\nQuestion...\n\nApproach: - bullet points..."
+     research_results: [] (first round) or [ResearchResult, ...] (follow-up)
+
+LLM sees: coordinator_system_prompt with {research_brief} injected
+        → reads Title + question + Approach
+        → decomposes into subtopics
+
+OUT: dispatch_research(topic, context) tool calls
+     → each spawns a researcher subgraph
+```
+
+### researcher (inside subgraph, per subtopic)
+```
+IN:  research_topic: "Subtopic\n\nContext: why this matters..."
+
+LLM: research_system_prompt with {topic}
+   → calls tavily_search(query) up to max_searches_per_round per round
+   → up to max_research_iterations rounds (search → reflect loop)
+
+OUT: notes: compressed findings with citations
+     accumulated_findings, current_gaps, contradictions
+     → wrapped as ResearchResult for coordinator
+```
+
+### final_report
+```
+IN:  research_brief + merged notes from all researchers
+OUT: final_report: markdown report with citations
+```
 
 ---
 
@@ -119,58 +151,33 @@ User sends question
   ├─ [need_clarification=true] → Command(goto="__end__") with question
   │     → user answers → graph re-invoked → clarify sees full history → proceeds
   └─ [need_clarification=false] → Command(goto="write_brief") with verification
-       → write_brief node (reads messages)
+       → write_brief node (reads messages + state)
             → generates ResearchBrief (structured output)
-            ├─ [allow_human_review=true] → Command(goto="__end__") with brief as AIMessage
+            ├─ [allow_human_review and not ready_to_proceed]
+            │     → Command(goto="__end__") with brief as AIMessage
             │     → user reviews, gives feedback or approves
             │     → graph re-invoked → clarify skips → write_brief reads history
-            │     → sees prior brief + feedback → revises or proceeds
-            └─ [approved or review disabled]
+            │     → LLM revises brief, sets ready_to_proceed
+            │     → feedback → exit again / approval → proceed
+            └─ [ready_to_proceed or review disabled]
                  ├─ [is_simple=true]  → Command(goto="researcher")
                  └─ [is_simple=false] → Command(goto="coordinator")
-                      → final_report → END
+                      → ... research pipeline ... → final_report → END
 ```
 
-### User interaction cycle (same pattern for both nodes)
+### Strategy flow through the system
 
-Both clarify and write_brief follow the same cycle:
-1. Read full message history
-2. Call LLM (structured output)
-3. Decide: need user input? → exit to `__end__` with AIMessage
-4. User responds → graph re-invoked → node reads updated history
-5. Ready to proceed? → route to next node via `Command`
+The approach field in the brief flows indirectly to search:
 
-The prompt handles both fresh and revision cases — if prior output + user
-feedback exist in messages, the LLM revises; otherwise it generates fresh.
-
-### Brief as strategy document
-
-The `research_brief` string includes both the question and approach:
 ```
-Title: Quantum Computing in 2025
-
-What is the current state of quantum computing in 2025...
-
-Approach:
-- Broad survey: cover distinct facets rather than deep-diving one
-- Important angles: technology, key players, applications, challenges
-- Market/investment data would be valuable context
+User question → brief prompt → approach: "focus on hardware, breadth over depth"
+  → coordinator reads approach → decomposes: "quantum hardware", "error correction", ...
+    → each researcher gets topic + context from coordinator
+      → researcher LLM decides search queries based on topic
+        → tavily_search("quantum hardware superconducting 2025")
 ```
 
-The user sees this as an AIMessage and can respond with feedback ("focus
-more on hardware") or approval. The coordinator reads the final brief
-and decides exact topic decomposition.
-
-### Simple question path
-
-For `is_simple=true`, the researcher adapter maps `AgentState` → `ResearcherState`:
-- `research_brief` → `research_topic`
-- Initialize empty accumulator fields
-- On return: `ResearcherState.notes` → `AgentState.notes`
-
-The adapter lives in `nodes/researcher/adapter.py`.
-
----
+The researcher never sees the approach directly — it's translated by the coordinator into specific topic assignments with context. This is intentional: researchers are focused and scoped, they don't need strategic context.
 
 ---
 
@@ -200,6 +207,7 @@ Add few-shot examples showing how different question types map to different deco
 
 - Coordinator prompt instruction 1: examples for comparison, survey, analysis, pros/cons
 - Updated trigger message for round 1
+- Later removed: strategy examples moved to brief's approach field instead (step 5-6)
 
 ### Step 3 — Add ClarifyOutput schema + clarify prompt ✅
 
@@ -227,7 +235,7 @@ Enrich the brief with strategic guidance so the user can review and modify the r
 
 - Added `allow_human_review: bool` to Configuration (default: true)
 
-### Step 8 — Extend research_brief_prompt to handle revision
+### Step 8 — Extend research_brief_prompt for revision ✅
 
 The prompt currently only generates a fresh brief. Extend it to also handle
 revision when prior brief + user feedback are present in context.
@@ -242,7 +250,7 @@ revision when prior brief + user feedback are present in context.
 No behavior change yet — brief node still calls the prompt the same way,
 just with empty prior_brief/feedback.
 
-### Step 9 — Rewrite write_research_brief with Command routing + review cycle
+### Step 9 — Rewrite write_research_brief with Command routing ✅
 
 Redesign the brief node to match the clarify node pattern: read messages,
 call LLM, route via Command.
@@ -255,24 +263,25 @@ call LLM, route via Command.
 - Call LLM with structured output (ResearchBrief) — same call for both cases
 - Format brief string from structured output
 - **Routing decision**:
-  - If `allow_human_review` and this is the first draft (no prior brief in state)
+  - If `allow_human_review` and not `ready_to_proceed`
     → `Command(goto="__end__", update={research_brief, is_simple, messages: [AIMessage with brief]})`
     The user sees the brief and can respond with feedback or approval
-  - If review disabled, or user approved, or this is a revision pass
+  - If review disabled, or `ready_to_proceed=True`
     → `Command(goto="researcher" or "coordinator", update={research_brief, is_simple})`
     based on `is_simple`
 
-**How approval is detected**: If `research_brief` already exists in state
-(meaning we showed it before), the node is being re-invoked. The LLM reads
-the prior brief + user's latest message and produces a (possibly unchanged)
-ResearchBrief. The node always proceeds after a revision pass — one round
-of feedback, then move on. The user can re-invoke again if they want more
-changes (the graph-exit pattern supports this naturally).
+**`ready_to_proceed` field on ResearchBrief** (default: False):
+- On a fresh brief, LLM sets it False (needs user review)
+- On re-invocation with user feedback, LLM reads prior brief + feedback and:
+  - Sets True if user approved → proceeds to research
+  - Sets False if user requested changes → revises and exits for another round
+- LLM detects approval vs feedback — no heuristic code needed
+- Multiple review rounds supported naturally
 
 **Return type change**: `write_research_brief` now returns
 `Command[Literal["__end__", "researcher", "coordinator"]]` instead of `dict`.
 
-### Step 10 — Move run_single_researcher to nodes/researcher/adapter.py
+### Step 10 — Move run_single_researcher to adapter.py ✅
 
 Extract the researcher adapter from graph.py into its own module.
 
@@ -281,10 +290,7 @@ Extract the researcher adapter from graph.py into its own module.
 - Maps AgentState → ResearcherState, invokes researcher_subgraph, maps back
 - Import `researcher_subgraph` from `nodes/researcher/__init__`
 
-**nodes/researcher/__init__.py**:
-- Add `run_single_researcher` to `__all__` exports
-
-### Step 11 — Clean graph.py to pure orchestration
+### Step 11 — Clean graph.py to pure orchestration ✅
 
 Remove all node logic from graph.py. It should only register nodes and wire edges.
 
@@ -301,29 +307,75 @@ Remove all node logic from graph.py. It should only register nodes and wire edge
 - No edge from write_brief — it routes itself via Command
 - No edge from clarify — it routes itself via Command
 - Update module docstring to reflect new architecture
+- Result: 52 lines of pure orchestration
 
-### Step 12 — Tests
+### Step 12 — Tests ✅
 
-Update tests to match the restructured code.
-
-**Unit tests** (mocked LLM, no API calls):
+**Unit tests** (35 total, mocked LLM, no API calls):
 - Brief node: review disabled → routes to researcher or coordinator based on is_simple
 - Brief node: review enabled, first draft → routes to __end__ with brief
-- Brief node: revision pass (prior brief in state + feedback) → routes to next node
-- Clarify node tests: keep existing (disabled/needs clarification/no clarification)
-- Schema validation: keep existing
-- Coordinator formatting helpers: keep existing
+- Brief node: revision approved (ready_to_proceed=True) → routes to coordinator
+- Brief node: revision with feedback (ready_to_proceed=False) → exits to __end__ again
+- Clarify node tests: disabled/needs clarification/no clarification
+- Schema validation, coordinator formatting helpers (existing)
 
-**Integration test** (real APIs):
-- Full pipeline with `AUTOMATED_CONFIG` (HITL disabled)
-- Verify brief includes approach, report is substantial
+**Integration tests** (3 total, real APIs):
+- Full pipeline with `AUTOMATED_CONFIG` (all HITL disabled) — question → report
+- Clarification enabled with clear question — proceeds without asking
+- Full HITL review cycle: generate brief → user feedback → revise → user approves → report
+- All passing (unit: ~30s, integration: ~7.5min)
 
 ---
 
-## Open Questions
+## Observations
 
-1. **Clarification in programmatic use**: When the system is invoked via API (not chat UI), clarification requires the caller to handle re-invocation. The `allow_clarification=false` config covers this, but we should document the pattern for callers who want clarification.
+### What worked well
 
-2. **Should `is_simple` be more nuanced?** Currently binary. We could add a middle ground — "focused" questions that need the coordinator but with constrained decomposition. Start simple, add nuance if the binary gate proves too coarse.
+- **Same pattern for both interaction nodes**: Clarify and write_brief use identical graph-exit + re-invocation. The code is consistent and easy to reason about. No `interrupt()` complexity, no checkpointer requirement for basic HITL.
 
-3. **How does write_brief detect approval vs feedback?** When the user re-invokes after seeing the brief, the node reads messages. It needs to distinguish "user approved" from "user gave feedback." Options: check if the last user message is a short approval phrase, or always treat any re-invocation after brief as a revision pass (the LLM decides if the feedback changes anything).
+- **LLM-driven routing via `ready_to_proceed`**: Letting the LLM decide "is this approval or feedback?" is cleaner than heuristic detection. The LLM reads the user's message in context and makes a judgment call — exactly what it's good at.
+
+- **One prompt for fresh + revision**: No prompt duplication. The optional `{prior_brief}` and `{feedback}` sections are empty on first pass, populated on revision. Same structured output either way.
+
+- **graph.py is tiny**: 52 lines, no logic. All behavior lives in node modules where it belongs.
+
+### What to watch
+
+- **Clarification on re-invocation**: When the graph is re-invoked for brief review, clarify runs again. It sees the full history and should skip. The prompt says "If the message history shows you have already asked a clarifying question, almost never ask another." This works in testing, but edge cases (long histories, ambiguous follow-up messages) haven't been stress-tested.
+
+- **Approach field quality**: The approach is free-text from the LLM. Its usefulness depends on prompt quality. In testing, the LLM produces reasonable bullet-point strategies, but we haven't measured whether the coordinator actually decomposes differently with vs without approach guidance.
+
+- **Review cycle termination**: The current design supports unlimited review rounds (feedback → revise → feedback → revise → ...). In practice the user controls this by approving. But a misbehaving LLM that never sets `ready_to_proceed=True` would loop forever. A max review iterations guard could be added if this becomes an issue.
+
+- **Re-invocation requires full state**: The graph-exit pattern means the caller must pass the full state back (including `research_brief`) on re-invocation. This is fine for programmatic use but needs careful UX design for a chat interface — the client must track and replay state.
+
+---
+
+## Resolved Questions
+
+1. **How does write_brief detect approval vs feedback?** Via `ready_to_proceed: bool` on ResearchBrief. The LLM reads the prior brief + user's latest message and sets it True (approval) or False (changes requested). No heuristic code needed — the LLM makes a contextual judgment.
+
+2. **Should there be a separate revision prompt?** No. One prompt with optional `{prior_brief}` and `{feedback}` sections handles both fresh generation and revision. When empty, it generates fresh; when populated, it revises.
+
+3. **Should `is_simple` be more nuanced?** Kept binary for now. Start simple, add nuance if the binary gate proves too coarse.
+
+4. **Does the clarify node interfere with brief review?** On re-invocation for brief review, clarify sees the full message history and skips. Tested and working, though edge cases with long histories remain untested.
+
+---
+
+## File Changes Summary
+
+### New files
+- `src/deep_research/nodes/clarify.py` — clarification node
+- `src/deep_research/nodes/researcher/adapter.py` — researcher state adapter
+
+### Modified files
+- `src/deep_research/models.py` — added ClarifyOutput, ResearchBrief (reformed with approach, is_simple, ready_to_proceed)
+- `src/deep_research/prompts.py` — added clarify_prompt, rewrote research_brief_prompt (with revision support), simplified coordinator_system_prompt
+- `src/deep_research/nodes/brief.py` — rewritten with Command routing + review cycle
+- `src/deep_research/graph/graph.py` — simplified to pure orchestration (52 lines)
+- `src/deep_research/configuration.py` — added allow_clarification, allow_human_review
+- `src/deep_research/state.py` — added is_simple to AgentState
+- `src/deep_research/__init__.py` — added ClarifyOutput, ResearchBrief to public exports
+- `tests/test_nodes.py` — 35 tests covering all new behavior
+- `tests/test_integration.py` — 3 integration tests including full HITL review cycle
