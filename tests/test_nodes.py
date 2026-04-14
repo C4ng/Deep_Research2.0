@@ -15,6 +15,7 @@ from deep_research.nodes.report import final_report_generation
 from deep_research.models import CoordinatorReflection
 from deep_research.nodes.coordinator.reflect import _merge_notes, _format_reflection_guidance
 from deep_research.nodes.coordinator.coordinator import _format_research_results
+from deep_research.graph.graph import route_by_complexity
 from deep_research.tools.registry import get_all_tools
 
 
@@ -24,6 +25,7 @@ def sample_state():
     return {
         "messages": [HumanMessage(content="What are the main causes and effects of coral reef bleaching?")],
         "research_brief": "",
+        "is_simple": False,
         "notes": "",
         "final_report": "",
     }
@@ -67,11 +69,20 @@ async def test_write_research_brief_has_structure(sample_state):
 
 
 @pytest.mark.asyncio
+async def test_write_research_brief_returns_is_simple(sample_state):
+    """Brief output includes is_simple routing flag."""
+    result = await write_research_brief(sample_state, config={"configurable": {}})
+    assert "is_simple" in result
+    assert isinstance(result["is_simple"], bool)
+
+
+@pytest.mark.asyncio
 async def test_final_report_generation():
     """Report node produces a non-empty markdown report from notes."""
     state = {
         "messages": [],
         "research_brief": "Title: Coral Reef Bleaching\n\nWhat are the main causes and effects of coral reef bleaching?",
+        "is_simple": False,
         "notes": (
             "Coral bleaching occurs when water temperatures rise above 1°C "
             "over the summer maximum for 4+ weeks. The primary cause is climate "
@@ -377,3 +388,24 @@ def test_format_reflection_guidance_no_gaps_or_contradictions():
     assert "All topics well covered" in guidance
     assert "Coverage gaps" not in guidance
     assert "contradictions" not in guidance
+
+
+# --- Route by complexity ---
+
+
+def test_route_by_complexity_simple():
+    """Simple questions route to single researcher."""
+    state = {"is_simple": True}
+    assert route_by_complexity(state) == "researcher"
+
+
+def test_route_by_complexity_complex():
+    """Complex questions route to coordinator."""
+    state = {"is_simple": False}
+    assert route_by_complexity(state) == "coordinator"
+
+
+def test_route_by_complexity_default():
+    """Missing is_simple defaults to coordinator."""
+    state = {}
+    assert route_by_complexity(state) == "coordinator"

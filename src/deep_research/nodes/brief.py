@@ -47,7 +47,7 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
 
     logger.info("Generating research brief from %d messages", len(state["messages"]))
     brief: ResearchBrief = await model.ainvoke([HumanMessage(content=prompt)])
-    logger.info("Brief generated: %s", brief.title)
+    logger.info("Brief generated: %s (is_simple=%s)", brief.title, brief.is_simple)
 
     # Store as formatted string for downstream consumption
     brief_str = f"Title: {brief.title}\n\n{brief.research_question}"
@@ -57,4 +57,4 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
     # model's structured interpretation — it may lose nuance, tone, or implicit
     # constraints from the original question (e.g., audience, perspective, depth).
     # For now, researcher uses only the brief for context isolation (Increment 3).
-    return {"research_brief": brief_str}
+    return {"research_brief": brief_str, "is_simple": brief.is_simple}

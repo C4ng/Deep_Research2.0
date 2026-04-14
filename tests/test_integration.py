@@ -19,6 +19,7 @@ async def test_full_pipeline_produces_report():
         {
             "messages": [HumanMessage(content="What is the current state of quantum computing in 2025?")],
             "research_brief": "",
+            "is_simple": False,
             "notes": "",
             "final_report": "",
         },

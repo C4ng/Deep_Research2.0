@@ -165,7 +165,6 @@ Reform the brief to produce a single research question instead of decomposed sub
   - Maximize specificity — include all known user preferences and constraints
   - Fill unstated but necessary dimensions as open-ended (don't invent, state as flexible)
   - Avoid unwarranted assumptions
-  - Use first person ("I want to understand...")
   - If specific sources should be prioritized, include them
   - If query is in a specific language, note to prioritize sources in that language
   - This is the sole input the coordinator sees — be thorough

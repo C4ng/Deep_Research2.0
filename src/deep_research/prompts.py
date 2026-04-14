@@ -33,7 +33,11 @@ Guidelines:
    published in that language.
 6. Phrase from the user's perspective — preserve their voice and intent.
 7. Be thorough — this research question is the sole input the coordinator
-   sees when deciding how to decompose and assign research."""
+   sees when deciding how to decompose and assign research.
+8. Determine if this is a simple question — a narrow, factual query where
+   a single researcher can find the answer without multi-topic decomposition.
+   Examples: "What is the latest stable version of React?", "When was
+   company X founded?" Set is_simple accordingly."""
 
 
 research_system_prompt = """\

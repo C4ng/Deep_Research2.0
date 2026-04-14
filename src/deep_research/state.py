@@ -23,6 +23,9 @@ class AgentState(TypedDict):
     research_brief: str
     """Structured research brief generated from the user query."""
 
+    is_simple: bool
+    """Whether the question is simple enough for a single researcher (no coordinator)."""
+
     notes: str
     """Accumulated research findings (combined from coordinator or single researcher)."""
 

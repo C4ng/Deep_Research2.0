@@ -20,6 +20,12 @@ class ResearchBrief(BaseModel):
     research_question: str = Field(
         description="Detailed research question with all user constraints preserved"
     )
+    is_simple: bool = Field(
+        description=(
+            "Whether a single researcher can handle this question. "
+            "True for narrow, factual queries with one clear answer expected."
+        )
+    )
 
 
 class SearchResult(BaseModel):
