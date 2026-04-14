@@ -53,15 +53,15 @@ def researcher_state():
 async def test_write_research_brief_returns_brief(sample_state):
     """Brief node produces a non-empty research_brief string."""
     result = await write_research_brief(sample_state, config={"configurable": {}})
-    assert "research_brief" in result
-    assert len(result["research_brief"]) > 0
+    assert "research_brief" in result.update
+    assert len(result.update["research_brief"]) > 0
 
 
 @pytest.mark.asyncio
 async def test_write_research_brief_has_structure(sample_state):
     """Brief output contains title and a research question paragraph."""
     result = await write_research_brief(sample_state, config={"configurable": {}})
-    brief = result["research_brief"]
+    brief = result.update["research_brief"]
     assert "Title:" in brief
     # Should be a single research question paragraph, not decomposed lists
     assert "Research Questions:" not in brief
@@ -75,8 +75,8 @@ async def test_write_research_brief_has_structure(sample_state):
 async def test_write_research_brief_returns_is_simple(sample_state):
     """Brief output includes is_simple routing flag."""
     result = await write_research_brief(sample_state, config={"configurable": {}})
-    assert "is_simple" in result
-    assert isinstance(result["is_simple"], bool)
+    assert "is_simple" in result.update
+    assert isinstance(result.update["is_simple"], bool)
 
 
 @pytest.mark.asyncio
@@ -473,7 +473,7 @@ def test_research_brief_simple():
 async def test_write_research_brief_includes_approach(sample_state):
     """Brief output includes approach section."""
     result = await write_research_brief(sample_state, config={"configurable": {}})
-    brief = result["research_brief"]
+    brief = result.update["research_brief"]
     assert "Approach:" in brief
 
 

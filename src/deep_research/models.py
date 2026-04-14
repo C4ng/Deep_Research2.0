@@ -43,6 +43,10 @@ class ResearchBrief(BaseModel):
             "True for narrow, factual queries with one clear answer expected."
         )
     )
+    ready_to_proceed: bool = Field(
+        default=False,
+        description="Whether the user approved the brief or requested changes"
+    )
 
 
 class SearchResult(BaseModel):

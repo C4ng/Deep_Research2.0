@@ -49,8 +49,10 @@ a recommended approach.
 
 Today's date is {date}.
 
-If a prior brief and user feedback are provided above, revise the brief
-to incorporate the feedback. Otherwise, create a fresh brief.
+If a prior brief and user feedback are provided above, assess whether the
+user is approving the brief or requesting changes. If approving, keep the
+brief unchanged and set ready_to_proceed to true. If requesting changes,
+revise accordingly and set ready_to_proceed to false.
 
 Research question — what to investigate:
 1. Capture the user's question with full specificity — include all
