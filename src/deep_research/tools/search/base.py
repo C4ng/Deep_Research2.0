@@ -15,6 +15,12 @@ from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
+from deep_research.helpers.source_store import (
+    generate_source_id,
+    get_sources_dir,
+    read_source,
+    write_source,
+)
 from deep_research.models import SearchResult, WebpageSummary
 
 logger = logging.getLogger(__name__)
@@ -89,43 +95,66 @@ class BaseSearchTool(ABC):
         """Search, summarize results, and return formatted output.
 
         This is the main entry point used by the researcher node.
+        Writes each source to the file-based store for citation tracking.
+        Cross-round dedup: if a URL was already summarized, reuses the
+        stored summary and skips the summarization LLM call.
         """
         results = await self.search(queries, max_results=max_results)
 
         if not results:
             return "No search results found. Try different search queries."
 
-        async def _summarize_one(result: SearchResult) -> str | None:
+        sources_dir = get_sources_dir(self._config)
+
+        async def _summarize_one(result: SearchResult) -> tuple[str, str | None]:
+            source_id = generate_source_id(result.url)
+
+            # Cross-round dedup: reuse stored summary if available
+            existing = read_source(sources_dir, source_id)
+            if existing:
+                logger.info("Source %s already in store, skipping summarization", source_id)
+                return source_id, existing["content"]
+
             if not result.raw_content:
-                return None
+                return source_id, None
+
             try:
                 summary = await self.summarize_content(result.raw_content)
-                return (
+                content = (
                     f"<summary>\n{summary.summary}\n</summary>\n\n"
                     f"<key_excerpts>\n{summary.key_excerpts}\n</key_excerpts>"
                 )
+                write_source(
+                    sources_dir, source_id, result.url, result.title,
+                    summary.summary, summary.key_excerpts,
+                )
+                return source_id, content
             except asyncio.TimeoutError:
                 logger.warning("Summarization timed out for %s", result.url)
-                return None
+                return source_id, None
             except Exception as e:
                 logger.warning("Summarization failed for %s: %s", result.url, e)
-                return None
+                return source_id, None
 
-        summaries = await asyncio.gather(
+        pairs = await asyncio.gather(
             *[_summarize_one(r) for r in results]
         )
+        source_ids = [p[0] for p in pairs]
+        summaries = [p[1] for p in pairs]
 
-        return self._format_results(results, summaries)
+        return self._format_results(results, summaries, source_ids)
 
     @staticmethod
     def _format_results(
-        results: list[SearchResult], summaries: list[str | None]
+        results: list[SearchResult],
+        summaries: list[str | None],
+        source_ids: list[str],
     ) -> str:
-        """Format search results and their summaries into readable output."""
+        """Format search results with stable source IDs for citation tracking."""
         output = "Search results:\n\n"
-        for i, (result, summary) in enumerate(zip(results, summaries)):
+        for result, summary, sid in zip(results, summaries, source_ids):
             content = summary if summary else result.content
-            output += f"\n--- SOURCE {i + 1}: {result.title} ---\n"
+            output += f"\n--- [{sid}] {result.title} ---\n"
             output += f"URL: {result.url}\n\n"
             output += f"{content}\n\n"
             output += "-" * 80 + "\n"

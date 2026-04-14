@@ -1,7 +1,7 @@
 """Tests for graph nodes.
 
-API tests hit real APIs — requires valid API keys in .env.
-Unit tests (reflect routing, formatting) run without API calls.
+Tests marked @pytest.mark.integration hit real APIs — requires valid API keys.
+Unit tests (reflect routing, formatting, mocked LLM) run without API calls.
 """
 
 from unittest.mock import AsyncMock, patch
@@ -48,6 +48,7 @@ def researcher_state():
     }
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_write_research_brief_returns_brief(sample_state):
     """Brief node produces a non-empty research_brief string."""
@@ -56,6 +57,7 @@ async def test_write_research_brief_returns_brief(sample_state):
     assert len(result.update["research_brief"]) > 0
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_write_research_brief_has_structure(sample_state):
     """Brief output contains title and a research question paragraph."""
@@ -70,6 +72,7 @@ async def test_write_research_brief_has_structure(sample_state):
     assert len(lines) >= 2
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_write_research_brief_returns_is_simple(sample_state):
     """Brief output includes is_simple routing flag."""
@@ -78,6 +81,7 @@ async def test_write_research_brief_returns_is_simple(sample_state):
     assert isinstance(result.update["is_simple"], bool)
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_final_report_generation():
     """Report node produces a non-empty markdown report from notes."""
@@ -100,6 +104,7 @@ async def test_final_report_generation():
     assert "#" in result["final_report"]  # has markdown headings
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_tool_registry_returns_tools():
     """Tool registry returns at least one tool with default config."""
@@ -461,6 +466,7 @@ def test_format_brief():
     assert "Approach: Survey approach." in result
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
 async def test_write_research_brief_includes_approach(sample_state):
     """Brief output includes approach section."""

@@ -1,6 +1,7 @@
 """Tests for search tool implementations.
 
 These tests hit real APIs (Tavily, Gemini) — requires valid API keys in .env.
+Run with: pytest -m integration
 """
 
 import pytest
@@ -8,6 +9,8 @@ import pytest
 from deep_research.configuration import Configuration
 from deep_research.models import SearchResult, WebpageSummary
 from deep_research.tools.search.tavily import TavilySearchTool
+
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture
@@ -78,6 +81,8 @@ async def test_search_and_summarize_formatted_output(tavily_tool):
     output = await tavily_tool.search_and_summarize(
         ["What causes ocean acidification?"], max_results=2
     )
-    assert "SOURCE 1" in output
+    # Source IDs are 8-char hex hashes, formatted as [abcd1234]
+    import re
+    assert re.search(r"\[[0-9a-f]{8}\]", output), "Expected [source_id] tag in output"
     assert "URL:" in output
     assert len(output) > 100

@@ -1,13 +1,15 @@
 """End-to-end integration tests — run the full pipeline.
 
 Hits real APIs (Gemini + Tavily). Requires valid API keys in .env.
-These are slow (~2-5 min each) so they're separated from unit/node tests.
+These are slow (~2-5 min each). Run with: pytest -m integration
 """
 
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from deep_research.graph.graph import build_graph
+
+pytestmark = pytest.mark.integration
 
 
 # Disable human-in-the-loop for automated tests
