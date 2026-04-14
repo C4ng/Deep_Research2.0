@@ -1,6 +1,6 @@
 # Increment 3 — Coordinator + Multi-Topic Decomposition
 **Goal**: Complex questions decomposed into subtopics, each researched independently, with cross-topic synthesis and follow-up.
-**Status**: Planning
+**Status**: Complete
 
 ## Overview
 
@@ -35,7 +35,7 @@ Each researcher is invoked as a subgraph call via a coordinator tool. The resear
 
 **Coordinator uses tools for dispatching**: `dispatch_research(topic, context)` tool invokes a researcher subgraph. Makes dispatching explicit and traceable in LangSmith.
 
-**Sequential execution first**: Researchers run one at a time. Parallel execution deferred to Increment 5.
+**Concurrent execution**: Researchers run concurrently via `asyncio.gather` in `coordinator_tools`. All tool calls from a single coordinator round execute in parallel.
 
 **File restructure**: Node files grouped by subgraph as packages (`nodes/researcher/`, `nodes/coordinator/`). Standalone nodes (`brief.py`, `report.py`) stay at `nodes/` level.
 
@@ -94,22 +94,18 @@ class ResearchReflection(BaseModel):
 
 Reflection prompt updated: "Capture notable strategic observations (connections between sources, unexpected scope, quality signals) as key_findings, not just factual discoveries."
 
-### CoordinatorReflection + FollowUp (new)
+### CoordinatorReflection (new)
 
 ```python
-class FollowUp(BaseModel):
-    topic: str             # what to research
-    reason: str            # why — gap, deepen, contradiction
-    context: str           # relevant findings so far, what to resolve
-
 class CoordinatorReflection(BaseModel):
-    key_findings: list[str]             # synthesis across all researchers
-    missing_info: list[str]             # gaps across the whole question
-    contradictions: list[str]           # conflicts between researchers
-    knowledge_state: Literal["insufficient", "partial", "sufficient"]
+    overall_assessment: str                  # summary of coverage quality
+    cross_topic_contradictions: list[str]    # conflicts between researchers
+    coverage_gaps: list[str]                 # major unaddressed aspects only
     should_continue: bool
-    follow_ups: list[FollowUp]          # topics to assign next round
+    knowledge_state: Literal["insufficient", "partial", "sufficient"]
 ```
+
+`FollowUp` was dropped — the coordinator can simply dispatch new `dispatch_research` calls for gaps without a dedicated schema.
 
 Field criteria live in the coordinator reflection prompt, not schema descriptions.
 
@@ -455,6 +451,27 @@ Add to `configuration.py`:
 
 4. **Knowledge preservation across stages**: Structured accumulator fields (`accumulated_findings`, `accumulated_contradictions`, `current_gaps`) replace the discard-after-use pattern. Reflection appends to accumulators; summarizer uses them for prioritization; `ResearchResult` carries them to the coordinator.
 
+## Observations from Integration Testing
+
+**Initial run: 8.5 minutes, 11 researchers across 2 coordinator rounds.** Root cause: reflection prompts at both levels were acting as question generators rather than completeness assessors. They invented deeper questions beyond topic scope (25-31 granular gaps per researcher), never reached "sufficient," and hit max iterations every time. Coordinator reflection listed 6 coverage gaps including emergent drill-downs.
+
+**Prompt calibration (3.6x speedup: 517s → 143s).** Fixed by:
+1. **Scope anchoring**: "does the information answer what the topic actually asks for, at the level of detail it implies?"
+2. **Diminishing returns**: "if the same gaps persist despite targeted searches, they are likely unsearchable"
+3. **Emergent topic clarification**: "missing perspectives at the same level, NOT deeper drill-downs" — moved from coverage_gaps to overall_assessment only
+4. **Removed continuation bias**: deleted "patterns that inform what to search next" from key_findings criteria
+5. **Separate reflection thinking budget**: 2048 tokens (down from 8192) — reflection is assessment, not deep reasoning
+6. **Example fix**: changed "no data on 2024 market share figures" to "no information on regulatory landscape" — the granular example was teaching the model to look for granular gaps
+
+**Post-fix quality assessment (86 findings, 7 contradictions across 5 researchers):**
+- All 5 researchers reached "sufficient" in 1-2 reflection rounds (was 3 before, hitting max)
+- Coordinator exited after 1 round with 0 coverage gaps (was 2 rounds with 6 gaps)
+- Findings are substantive with specific facts, numbers, named sources — not vague summaries
+- Contradictions are genuine data conflicts (Nvidia timeline, market size discrepancies) — not noise
+- 2 minor gaps (quantum ML/simulation algorithms) correctly not chased
+
+**Future report improvements**: Surface contradictions and minor gaps in the final report as "open questions" and "directions for deeper research" — let the user decide whether to investigate further.
+
 ## Open Questions
 
 1. **Coordinator context engineering**: With many researchers returning findings, the coordinator's input context can grow. Current plan: coordinator sees metadata (findings, gaps, contradictions) but not full notes for dispatching decisions. Coordinator reflection sees the same. Monitor in traces — if context grows too large, add a compression step for coordinator input.
@@ -467,9 +484,9 @@ Add to `configuration.py`:
 
 ```
 src/deep_research/
-    __init__.py               # + ResearchReflection, CoordinatorReflection, ResearchResult, FollowUp exports
-    configuration.py          # + max_coordinator_iterations, max_research_topics
-    models.py                 # + CoordinatorReflection, FollowUp, ResearchResult; Reflection → ResearchReflection
+    __init__.py               # + ResearchReflection, CoordinatorReflection, ResearchResult exports
+    configuration.py          # + max_coordinator_iterations, max_research_topics, reflection_thinking_budget
+    models.py                 # + CoordinatorReflection, ResearchResult; Reflection → ResearchReflection
     prompts.py                # + coordinator_system_prompt, coordinator_reflection_prompt; updated reflection_prompt
     state.py                  # + CoordinatorState, ResearcherState; AgentState simplified
     graph/
