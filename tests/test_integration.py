@@ -205,5 +205,21 @@ async def test_citation_tracking_end_to_end():
             assert not unknown_ids, (
                 f"Notes reference source IDs not in store: {unknown_ids}"
             )
+
+            # 5. Report has sequential [N] citations, not raw hex IDs
+            report = result["final_report"]
+            assert report, "final_report should not be empty"
+            seq_citations = re.findall(r"\[(\d+)\]", report)
+            assert len(seq_citations) > 0, "Report should contain sequential [N] citations"
+
+            # 6. Report has a deterministic Sources section
+            assert "## Sources" in report, "Report should have a ## Sources section"
+
+            # 7. No raw hex source IDs remain in the report
+            # (some may be hallucinated and removed, but none should survive)
+            hex_in_report = re.findall(r"\[([0-9a-f]{8})\]", report)
+            assert not hex_in_report, (
+                f"Raw hex source IDs should be resolved: {hex_in_report}"
+            )
         finally:
             reset_sources_dir()
