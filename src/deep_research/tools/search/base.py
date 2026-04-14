@@ -104,7 +104,7 @@ class BaseSearchTool(ABC):
         if not results:
             return "No search results found. Try different search queries."
 
-        sources_dir = get_sources_dir(self._config)
+        sources_dir = get_sources_dir()
 
         async def _summarize_one(result: SearchResult) -> tuple[str, str | None]:
             source_id = generate_source_id(result.url)

@@ -14,10 +14,6 @@ import logging
 import tempfile
 from pathlib import Path
 
-from langchain_core.runnables import RunnableConfig
-
-from deep_research.configuration import Configuration
-
 logger = logging.getLogger(__name__)
 
 # Cached temp directory for when sources_dir is not configured
@@ -104,7 +100,7 @@ def build_source_map(sources_dir: Path) -> dict[str, dict]:
     return source_map
 
 
-def get_sources_dir(config: RunnableConfig | None = None) -> Path:
+def get_sources_dir() -> Path:
     """Get or create the sources directory.
 
     If sources_dir is set in Configuration, use it.
@@ -112,18 +108,34 @@ def get_sources_dir(config: RunnableConfig | None = None) -> Path:
     """
     global _default_sources_dir
 
-    configurable = Configuration.from_runnable_config(config)
-    if configurable.sources_dir:
-        path = Path(configurable.sources_dir)
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+    if _default_sources_dir is not None:
+        return _default_sources_dir
 
-    if _default_sources_dir is None:
-        _default_sources_dir = Path(
-            tempfile.mkdtemp(prefix="deep_research_sources_")
-        )
-        logger.info("Created temp sources directory: %s", _default_sources_dir)
+    _default_sources_dir = Path(
+        tempfile.mkdtemp(prefix="deep_research_sources_")
+    )
+    logger.info("Created sources directory: %s", _default_sources_dir)
     return _default_sources_dir
+
+
+def set_sources_dir(path: str | Path) -> Path:
+    """Set the sources directory explicitly.
+
+    Call before graph invocation to control where source files are stored.
+    LangGraph strips custom configurable keys through subgraphs, so this
+    uses a module-level cache instead of config propagation.
+    """
+    global _default_sources_dir
+    _default_sources_dir = Path(path)
+    _default_sources_dir.mkdir(parents=True, exist_ok=True)
+    logger.info("Sources directory set to: %s", _default_sources_dir)
+    return _default_sources_dir
+
+
+def reset_sources_dir() -> None:
+    """Reset the sources directory cache. Used between runs/tests."""
+    global _default_sources_dir
+    _default_sources_dir = None
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:

@@ -4,10 +4,15 @@ Hits real APIs (Gemini + Tavily). Requires valid API keys in .env.
 These are slow (~2-5 min each). Run with: pytest -m integration
 """
 
+import re
+import tempfile
+from pathlib import Path
+
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
 
 from deep_research.graph.graph import build_graph
+from deep_research.helpers.source_store import build_source_map, reset_sources_dir, set_sources_dir
 
 pytestmark = pytest.mark.integration
 
@@ -155,3 +160,49 @@ async def test_brief_review_cycle():
     report = result3["final_report"]
     assert len(report) > 500, f"Report too short ({len(report)} chars)"
     assert "#" in report, "Report should contain markdown headings"
+
+
+@pytest.mark.asyncio
+async def test_citation_tracking_end_to_end():
+    """Citation system: source files created, [source_id] tags in notes, IDs match store."""
+    with tempfile.TemporaryDirectory() as sources_dir:
+        set_sources_dir(sources_dir)
+        try:
+            graph = build_graph()
+
+            result = await graph.ainvoke(
+                {
+                    **INITIAL_STATE,
+                    "messages": [HumanMessage(content="What is the latest stable version of Python?")],
+                },
+                config=AUTOMATED_CONFIG,
+            )
+
+            # 1. Source files were written to the store
+            source_map = build_source_map(Path(sources_dir))
+            assert len(source_map) > 0, "No source files written to store"
+
+            # 2. Every source file has url and title
+            for sid, meta in source_map.items():
+                assert meta["url"], f"Source {sid} missing url"
+                assert meta["title"], f"Source {sid} missing title"
+
+            # 3. Notes contain [source_id] tags
+            notes = result["notes"]
+            assert notes, "notes should not be empty"
+            found_ids = set(re.findall(r"\[([0-9a-f]{8})\]", notes))
+            # At least some source IDs should appear in notes
+            # (compression may not preserve all, but should preserve some)
+            assert len(found_ids) > 0, (
+                f"No [source_id] tags found in notes. "
+                f"Store has {len(source_map)} sources. Notes preview: {notes[:300]}"
+            )
+
+            # 4. Source IDs in notes should match files in the store
+            store_ids = set(source_map.keys())
+            unknown_ids = found_ids - store_ids
+            assert not unknown_ids, (
+                f"Notes reference source IDs not in store: {unknown_ids}"
+            )
+        finally:
+            reset_sources_dir()
