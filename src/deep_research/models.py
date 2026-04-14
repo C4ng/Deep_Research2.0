@@ -9,6 +9,20 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 
+class ClarifyOutput(BaseModel):
+    """Structured output from the clarification node."""
+
+    need_clarification: bool = Field(
+        description="Whether to ask the user a clarifying question"
+    )
+    question: str = Field(
+        description="The clarifying question to ask (empty if not needed)"
+    )
+    verification: str = Field(
+        description="Acknowledgement message before starting research (empty if clarifying)"
+    )
+
+
 class ResearchBrief(BaseModel):
     """Structured research brief extracted from user query.
 

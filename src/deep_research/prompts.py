@@ -4,6 +4,31 @@ All prompts live here — not scattered in node or tool code.
 Grows incrementally as nodes are added.
 """
 
+clarify_prompt = """\
+You are preparing to research a topic for the user. Assess whether you
+need to ask a clarifying question before starting.
+
+<messages>
+{messages}
+</messages>
+
+Today's date is {date}.
+
+Guidelines:
+1. Ask only when genuinely needed — unclear acronyms, ambiguous scope that
+   could lead to very different research directions, or missing context
+   that would waste research effort.
+2. If the message history shows you have already asked a clarifying
+   question, almost never ask another. Only ask again if absolutely
+   necessary.
+3. Do not ask for information the user already provided.
+4. When asking, be concise — one well-structured question, not a list
+   of demands. Use markdown formatting for readability.
+5. When not asking, provide a brief verification message: acknowledge
+   what you understand from the request and confirm you will begin
+   research."""
+
+
 research_brief_prompt = """\
 You will be given messages from a user requesting research on a topic.
 Transform these into a single, detailed research question that will guide
@@ -199,8 +224,7 @@ You are a research coordinator managing a team of focused researchers. \
 Today's date is {date}.
 
 <task>
-Read the research brief below and decompose it into focused subtopics.
-For each subtopic, dispatch a researcher using the `dispatch_research` tool.
+Read the research brief and dispatch researchers using `dispatch_research`.
 Each researcher works independently on its assigned topic — it does not
 see other researchers' findings or the full brief.
 </task>
@@ -214,7 +238,20 @@ see other researchers' findings or the full brief.
 </prior_research>
 
 <instructions>
-1. Identify the key subtopics that together cover the research brief.
+1. Before dispatching, reason about what kind of research this question
+   needs and choose a strategy. Dispatch as many researchers as the
+   question genuinely needs — no more, no fewer. Examples:
+
+   - "Compare X vs Y" → 1 researcher per subject + 1 cross-cutting
+     comparison. Depth over breadth.
+   - "Overview of advancements in X" → 4-5 researchers covering distinct
+     facets (technology, applications, market, challenges). Breadth over
+     depth.
+   - "How does X work and what are the implications?" → 2-3 researchers:
+     mechanism, real-world impact, expert opinions. Balanced.
+   - "Pros and cons of X" → 2-3 researchers by angle (technical tradeoffs,
+     user experience, cost/business). Moderate depth.
+
 2. For each subtopic, call `dispatch_research(topic, context)`:
    - `topic`: a focused, specific research topic (not the full brief).
    - `context`: brief context explaining why this subtopic matters and
@@ -232,7 +269,7 @@ see other researchers' findings or the full brief.
 </instructions>
 
 <limits>
-- Initial decomposition: up to {max_research_topics} subtopics.
+- Soft cap: up to {max_research_topics} subtopics per round.
 - Follow-up rounds: dispatch researchers for gaps and emergent topics.
 </limits>"""
 

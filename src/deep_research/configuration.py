@@ -100,6 +100,12 @@ class Configuration(BaseModel):
         description="Maximum retries for structured output and model calls",
     )
 
+    # Clarification
+    allow_clarification: bool = Field(
+        default=True,
+        description="Whether to ask clarifying questions before research",
+    )
+
     # Coordinator limits
     max_research_topics: int = Field(
         default=5,
