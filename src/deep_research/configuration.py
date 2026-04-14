@@ -93,6 +93,16 @@ class Configuration(BaseModel):
         description="Maximum retries for structured output and model calls",
     )
 
+    # Supervisor limits
+    max_research_topics: int = Field(
+        default=5,
+        description="Maximum number of subtopics the supervisor can decompose into",
+    )
+    max_supervisor_iterations: int = Field(
+        default=2,
+        description="Maximum supervisor reflection cycles before forcing exit",
+    )
+
     # API keys — loaded from env via dotenv, not hardcoded
     tavily_api_key: str = Field(
         default="",

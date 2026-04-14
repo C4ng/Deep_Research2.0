@@ -96,15 +96,14 @@ async def supervisor_reflect(
         len(reflection.cross_topic_contradictions),
     )
 
-    max_iterations = getattr(configurable, "max_supervisor_iterations", 3)
     should_stop = (
         not reflection.should_continue
         or reflection.knowledge_state == "sufficient"
-        or iteration >= max_iterations
+        or iteration >= configurable.max_supervisor_iterations
     )
 
     if should_stop:
-        if iteration >= max_iterations:
+        if iteration >= configurable.max_supervisor_iterations:
             logger.warning(
                 "Forcing exit — max supervisor iterations (%d) reached",
                 iteration,

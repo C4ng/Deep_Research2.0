@@ -85,7 +85,7 @@ async def supervisor(state: SupervisorState, config: RunnableConfig) -> dict:
         supervisor_system_prompt.format(
             research_brief=state["research_brief"],
             prior_research=prior_research,
-            max_research_topics=getattr(configurable, "max_research_topics", 5),
+            max_research_topics=configurable.max_research_topics,
             date=datetime.now().strftime("%B %d, %Y"),
         )
     ]
