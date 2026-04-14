@@ -22,7 +22,12 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_tool_results(state: ResearcherState) -> str:
-    """Extract all ToolMessage content from messages."""
+    """Extract all ToolMessage content from messages.
+
+    TODO(context): On round 2+, this includes prior rounds' tool results which
+    are redundant with accumulated_context. Filtering to only this round's results
+    would reduce context size but requires tracking message boundaries per round.
+    """
     return "\n\n".join(
         m.content for m in state.get("messages", [])
         if isinstance(m, ToolMessage) and m.content
@@ -98,8 +103,8 @@ async def _run_reflection(
         "max_tokens": configurable.research_model_max_tokens,
         "temperature": configurable.research_model_temperature,
     }
-    if configurable.research_model_thinking_budget is not None:
-        model_config["thinking_budget"] = configurable.research_model_thinking_budget
+    if configurable.reflection_thinking_budget is not None:
+        model_config["thinking_budget"] = configurable.reflection_thinking_budget
 
     model = (
         configurable_model

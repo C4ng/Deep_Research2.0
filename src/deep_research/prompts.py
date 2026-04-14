@@ -107,30 +107,48 @@ You are assessing the progress of a research task. Today's date is {date}.
 </prior_context>
 
 <instructions>
-1. Compare the findings against the research topic — what has been answered?
-2. If prior context is provided, assess whether gaps from the last round have been filled by new findings.
-3. Identify specific gaps that remain unanswered.
+1. Compare the findings against the research topic — does the information
+   answer what the topic actually asks for, at the level of detail it implies?
+   A topic asking about "advancements in 2025" needs key developments, not
+   exhaustive metrics for every sub-technology.
+2. If prior context is provided, check whether gaps from the last round were
+   filled by new findings. If the same gaps persist despite targeted searches,
+   they are likely unsearchable — do not keep chasing them.
+3. Identify gaps that are within the scope of the assigned topic and
+   realistically answerable by web search. Do not invent deeper questions
+   beyond what the topic asks for.
 4. Note any contradictions between sources (including against prior findings).
-5. Decide whether further searching would be productive.
+5. Decide whether further searching would be productive — prioritize
+   stopping with good coverage over exhaustive completeness.
 </instructions>
 
 <field_criteria>
 key_findings:
 - Include specific facts and data points discovered this round.
-- Also capture strategic observations: connections between sources, unexpected scope, quality signals, patterns that inform what to search next.
+- Also capture strategic observations: connections between sources, unexpected
+  scope, quality signals.
 - These accumulate across rounds — be concrete so future rounds know what's covered.
 
 knowledge_state:
-- "insufficient": Core research questions are unanswered, or fewer than 2 supporting sources found.
-- "partial": Some questions answered but notable gaps remain.
-- "sufficient": All research questions addressed with supporting sources.
+- "insufficient": Core questions in the topic are unanswered, fewer than 2
+  supporting sources found.
+- "partial": Topic is partially answered but major angles are missing.
+- "sufficient": The topic is well-covered at the level of detail it asks for.
+  Minor niche details missing does NOT prevent "sufficient."
 
 should_continue:
-- false: Last searches returned mostly overlapping information, topic is too niche for web search, or remaining gaps require expertise search cannot provide.
-- true: Concrete gaps exist that targeted queries could fill.
+- false: The topic is reasonably well-covered; OR last searches returned mostly
+  overlapping information; OR remaining gaps are too niche for web search; OR
+  gaps from the previous round persist unfilled (signal they are unsearchable).
+- true: Major aspects of the topic are unanswered AND targeted queries are
+  likely to help.
 
 missing_info:
-- Be specific and actionable (e.g. "no data on 2024 market share figures"), not vague ("need more information").
+- Only gaps that the topic explicitly asks for but the findings don't cover.
+- Do NOT list deeper follow-up questions beyond the topic's scope.
+- Do NOT list niche details when the topic asks for a general overview.
+- Be specific (e.g. "no information on regulatory landscape" not "need more info")
+  but stay at the topic's level of detail — not niche sub-questions.
 
 contradictions:
 - Cite which sources disagree and on what specific point.
@@ -192,9 +210,10 @@ see other researchers' findings or the full brief.
 4. If prior research results are shown above, read them before dispatching:
    - Do not re-research topics already covered with sufficient knowledge.
    - Target gaps and contradictions identified in the reflection.
-   - Look for emergent topics — researchers often uncover important angles
-     not anticipated in the original brief. Dispatch new researchers for
-     these when they are relevant and substantive.
+   - Look for emergent topics — important angles within the scope of the
+     original user query that complement existing topics. Emergent topics
+     are missing perspectives at the same level (e.g., a stakeholder nobody
+     covered), NOT deeper drill-downs into already-covered areas.
 5. Do not produce a final summary — a downstream step handles synthesis.
 </instructions>
 
@@ -218,42 +237,50 @@ Today's date is {date}.
 
 <instructions>
 1. Compare the combined research results against the original brief —
-   what has been answered, what is missing?
-2. Look for emergent topics — researchers often discover important angles
-   not in the original brief (new technologies, stakeholders, risks, etc.).
-   Flag these as worth investigating if they are substantive and relevant.
+   does the research answer the user's questions at the level of detail
+   the brief implies? Do not demand exhaustive coverage of every sub-detail.
+2. Note any emergent topics discovered during research — important angles
+   within the scope of the original query that complement existing coverage.
+   Mention these in the overall assessment. Emergent topics are missing
+   perspectives at the same level (e.g., a stakeholder group nobody covered),
+   NOT deeper drill-downs into already-covered areas.
 3. Identify contradictions *between* different researchers' findings
    (not within a single researcher — those are already flagged).
-4. Assess whether the remaining gaps and emergent topics are fillable
-   by further research or require expertise that web search cannot provide.
-5. Decide whether follow-up research is worth the cost — balance coverage
-   breadth against diminishing returns.
+4. Assess whether remaining gaps are major (worth dispatching a researcher)
+   or minor (niche details that web search is unlikely to resolve).
+5. Prefer stopping with good coverage over chasing exhaustive completeness.
+   Follow-up research should only be dispatched for clearly significant gaps,
+   not for granular details.
 </instructions>
 
 <field_criteria>
 overall_assessment:
-- One paragraph summarizing coverage quality across all topics.
-- Note any emergent topics discovered that expand the original scope.
+- One paragraph summarizing how well the research covers the user's brief.
+- Note any emergent topics discovered that complement existing coverage.
 
 cross_topic_contradictions:
 - Cite which researchers disagree and on what specific point.
 - Only flag genuine conflicts, not differences in scope or emphasis.
 
 coverage_gaps:
-- Aspects of the brief not addressed by any researcher.
-- Emergent topics discovered during research that deserve investigation.
-- Be actionable: "no data on X" not "need more research."
+- Only major aspects of the brief not addressed by any researcher.
+- Do NOT list deeper drill-downs into already-covered topics.
+- Do NOT list niche details that researchers flagged as missing — those are
+  expected and not worth a new researcher dispatch.
+- Do NOT include emergent topics here — note them in overall_assessment instead.
+- Each gap should be significant enough to justify dispatching a full researcher.
 
 should_continue:
-- true: Concrete gaps or emergent topics remain that targeted research
-  could address.
-- false: Coverage is adequate, remaining gaps are too niche for web search,
-  or diminishing returns from further research.
+- true: A major aspect of the brief is unaddressed AND a targeted researcher
+  could realistically fill it via web search.
+- false: The brief's research questions are reasonably answered; remaining
+  gaps are minor, too niche, or already attempted unsuccessfully.
 
 knowledge_state:
-- "insufficient": Major aspects of the brief are unaddressed.
-- "partial": Most questions answered but notable gaps or emergent topics remain.
-- "sufficient": Brief is well-covered with supporting sources.
+- "insufficient": Major research questions from the brief are unanswered.
+- "partial": Most questions answered but a significant angle is missing.
+- "sufficient": The brief's questions are well-covered at the level of detail
+  they ask for. Minor gaps do NOT prevent "sufficient."
 </field_criteria>"""
 
 

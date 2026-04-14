@@ -45,6 +45,13 @@ class Configuration(BaseModel):
             "counts against max_tokens — without a budget, thinking can starve output."
         ),
     )
+    reflection_thinking_budget: Optional[int] = Field(
+        default=2048,
+        description=(
+            "Max thinking tokens for reflection LLM calls. Lower than research "
+            "model — reflection is assessment, not deep reasoning."
+        ),
+    )
     # TODO: Add a model config resolver that builds provider-aware config dicts.
     # Currently thinking_budget is conditionally passed (only when not None),
     # but a proper resolver would handle all provider-specific params in one place

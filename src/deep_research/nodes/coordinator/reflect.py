@@ -69,8 +69,8 @@ async def coordinator_reflect(
         "max_tokens": configurable.research_model_max_tokens,
         "temperature": configurable.research_model_temperature,
     }
-    if configurable.research_model_thinking_budget is not None:
-        model_config["thinking_budget"] = configurable.research_model_thinking_budget
+    if configurable.reflection_thinking_budget is not None:
+        model_config["thinking_budget"] = configurable.reflection_thinking_budget
 
     model = (
         configurable_model
