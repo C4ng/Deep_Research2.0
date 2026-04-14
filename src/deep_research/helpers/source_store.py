@@ -11,6 +11,7 @@ the store resolves [sN] references to actual URLs.
 
 import hashlib
 import logging
+import re
 import tempfile
 from pathlib import Path
 
@@ -136,6 +137,97 @@ def reset_sources_dir() -> None:
     """Reset the sources directory cache. Used between runs/tests."""
     global _default_sources_dir
     _default_sources_dir = None
+
+
+def format_source_map_for_prompt(source_map: dict[str, dict]) -> str:
+    """Format source map as a lookup table for the report prompt.
+
+    Produces one line per source so the LLM knows what sources exist
+    and can reference them by their [source_id] tags.
+    """
+    if not source_map:
+        return "No sources available."
+    lines = []
+    for sid, meta in source_map.items():
+        title = meta.get("title", "Untitled")
+        url = meta.get("url", "")
+        lines.append(f"[{sid}] {title} — {url}")
+    return "\n".join(lines)
+
+
+# Regex for source ID references: [id] or [id1, id2, id3]
+_CITATION_PATTERN = re.compile(
+    r"\[([0-9a-f]{8}(?:\s*,\s*[0-9a-f]{8})*)\]"
+)
+
+# Regex to strip LLM-generated Sources/References section at end of report
+_SOURCES_SECTION_PATTERN = re.compile(
+    r"\n##\s+(?:Sources|References)\s*\n.*",
+    re.DOTALL,
+)
+
+
+def resolve_citations(
+    report: str, source_map: dict[str, dict]
+) -> tuple[str, list[str]]:
+    """Replace [source_id] tags with sequential [N] and append a Sources section.
+
+    Handles both [id] and [id1, id2] formats (observed LLM behavior).
+
+    Returns (resolved_report, warnings).
+    Warnings list contains messages about source IDs referenced but not in store.
+    """
+    if not source_map:
+        return report, []
+
+    warnings: list[str] = []
+
+    # First pass: collect all cited source IDs in order of first appearance
+    cited_ids: list[str] = []
+    for match in _CITATION_PATTERN.finditer(report):
+        ids_str = match.group(1)
+        for sid in re.split(r"\s*,\s*", ids_str):
+            if sid not in cited_ids:
+                cited_ids.append(sid)
+
+    if not cited_ids:
+        return report, []
+
+    # Build source_id → sequential number mapping (only for known IDs)
+    id_to_num: dict[str, int] = {}
+    num = 1
+    for sid in cited_ids:
+        if sid in source_map:
+            id_to_num[sid] = num
+            num += 1
+        else:
+            warnings.append(f"Source ID [{sid}] referenced in report but not found in store")
+
+    # Second pass: replace each citation match with sequential numbers
+    def _replace_match(match: re.Match) -> str:
+        ids_str = match.group(1)
+        sids = re.split(r"\s*,\s*", ids_str)
+        nums = [str(id_to_num[sid]) for sid in sids if sid in id_to_num]
+        if not nums:
+            return ""  # all IDs unknown — remove the bracket
+        return "[" + ", ".join(nums) + "]"
+
+    resolved = _CITATION_PATTERN.sub(_replace_match, report)
+
+    # Strip any LLM-generated Sources/References section
+    resolved = _SOURCES_SECTION_PATTERN.sub("", resolved).rstrip()
+
+    # Append deterministic Sources section
+    if id_to_num:
+        source_lines = ["\n\n## Sources\n"]
+        for sid, n in id_to_num.items():
+            meta = source_map[sid]
+            title = meta.get("title", "Untitled")
+            url = meta.get("url", "")
+            source_lines.append(f"[{n}] {title}: {url}")
+        resolved += "\n".join(source_lines) + "\n"
+
+    return resolved, warnings
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, str], str]:
