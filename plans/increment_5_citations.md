@@ -1,6 +1,6 @@
 # Increment 5 — Citation System
 **Goal**: Structured citation tracking from search through compression, with stable source IDs and verifiable references.
-**Status**: Implementation Plan
+**Status**: Complete
 **Depends on**: Increment 4 (Question Stage) — completed
 
 ## Overview
@@ -361,6 +361,23 @@ Integration-level test (can be a unit test with mocked search):
 | `summarizer.py` | Node code unchanged — prompt does the work. The summarizer still joins ToolMessages and compresses. |
 | `state.py` | No new state fields. Source store is on disk, not in graph state. |
 | `coordinator/` | Coordinator doesn't touch citations directly. `[sN]` IDs flow through researcher → notes → coordinator → report. |
+
+## Observations from Integration Testing
+
+End-to-end run on "ocean plastic pollution" (19 sources, 2 research rounds):
+
+**What works well:**
+- **Summarizer attribution**: Nearly every claim in compressed notes has source IDs. Multi-source corroboration occurs naturally (e.g., `[9f5a3ca9, ce77b549]` for a finding confirmed by two sources).
+- **Key findings**: All 19 accumulated findings reference specific source IDs. The LLM consistently tags facts with the sources they came from.
+- **Contradictions**: Source IDs used to cite exactly which sources disagree (e.g., different tonnage estimates attributed to `[d8329a64]` vs `[46719a5f, 7b035619]` vs `[e2e6b229]`).
+- **Short IDs preserved through compression**: 8-char hex IDs survive the summarizer far better than full URLs ever would.
+
+**Issue: LLM citation format**
+The LLM prefers comma-separated IDs in a single bracket: `[id1, id2]` rather than separate brackets `[id1][id2]`. This means:
+- Report-time citation resolver (Increment 6) must parse `[id1, id2]` format, not just `[id1]`
+- Regex for counting/verifying citations needs to handle both formats
+
+**Coverage**: Not all source IDs survive compression — some are lost when the summarizer deduplicates overlapping info (expected at high compression ratios). The source store preserves originals on disk regardless.
 
 ## Deferred
 
