@@ -171,9 +171,11 @@ src/deep_research/
 ```
     nodes/
         clarify.py         # clarify_with_user node
-    configuration.py       # full Configuration class
-    helpers/
-        config.py          # API key routing per provider
+    models.py              # + ClarifyOutput; ResearchBrief simplified (single question + is_simple)
+    prompts.py             # + clarify_prompt; research_brief_prompt rewritten; coordinator_system_prompt updated
+    state.py               # + is_simple to AgentState
+    graph/
+        graph.py           # + clarify node, conditional routing (simple → researcher, else → coordinator)
 ```
 
 ### Increment 5 — adds
@@ -189,6 +191,8 @@ src/deep_research/
     tools/
         search/
             brave.py       # BraveSearchTool(BaseSearchTool)
+    helpers/
+        config.py          # API key routing per provider
     cli.py                 # CLI interface
 ```
 
@@ -230,29 +234,30 @@ src/deep_research/
 
 **Delivers**: Multi-faceted research capability.
 
-### Increment 4 — Clarification + Full Configuration
-**Goal**: User-facing polish + provider flexibility.
+### Increment 4 — Question Stage (Clarification + Scoping)
+**Goal**: Well-formed research questions through user interaction, with adaptive routing.
 
-- `clarify_with_user` node (optional, config-gated)
-- Full `Configuration` class: model provider/name, search API, iteration limits, max concurrency
-- Model provider abstraction completed (add Claude + OpenAI providers)
-- API key routing per provider from env vars
+- `clarify_with_user` node: resolve ambiguity before research begins (optional, config-gated)
+- Brief reform: single well-articulated research question (drop premature decomposition into subtopics — that's the coordinator's job)
+- Simple question routing: `is_simple` flag bypasses coordinator, goes direct to single researcher
+- Coordinator prompt update: reason deliberately about research strategy before decomposing (no fixed type enum — the coordinator thinks freely about approach)
 
-**Delivers**: Configurable, multi-provider system.
+**Delivers**: Adaptive system — simple questions get fast answers, complex questions get full multi-topic research, coordinator reasons about strategy instead of always decomposing into 5 topics.
 
 ### Increment 5 — Dead-End Handling + Quality (Differentiators)
 **Goal**: The features from DESIGN_REFERENCE.md Section 6 that set us apart.
 
 - Dead-end detection: compare `missing_info` across reflection rounds → reformulate
 - Contradiction resolution: non-empty `contradictions` → targeted follow-up searches
-- Supervisor handles low-confidence researcher returns (reassign or accept partial)
+- Coordinator handles low-confidence researcher returns (reassign or accept partial)
 - Light review pass on final report (claims vs sources check)
 - Token-limit retry with progressive truncation
-- Parallel researcher execution with concurrency cap
 
 **Delivers**: Robust, quality-aware research.
 
-### Increment 6 — Extensions
+### Increment 6 — Extensions + Provider Flexibility
+- Multi-provider model support (Claude, OpenAI) + config resolver
+- API key routing per provider
 - Second search provider: `BraveSearchTool(BaseSearchTool)`
 - URL authority scoring on search results
 - Two-tier notes (raw + compressed)
