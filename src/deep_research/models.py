@@ -10,14 +10,15 @@ from pydantic import BaseModel, Field
 
 
 class ResearchBrief(BaseModel):
-    """Structured research brief extracted from user query."""
+    """Structured research brief extracted from user query.
+
+    A single well-articulated research question — NOT decomposed into
+    subtopics. Topic decomposition is the coordinator's job.
+    """
 
     title: str = Field(description="Concise title for the research topic")
-    research_questions: list[str] = Field(
-        description="Specific questions to investigate"
-    )
-    key_topics: list[str] = Field(
-        description="Key topics and subtopics to cover"
+    research_question: str = Field(
+        description="Detailed research question with all user constraints preserved"
     )
 
 

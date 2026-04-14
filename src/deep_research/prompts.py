@@ -6,8 +6,9 @@ Grows incrementally as nodes are added.
 
 research_brief_prompt = """\
 You will be given messages from a user requesting research on a topic.
-Transform these into a structured research brief that will guide the
-research process.
+Transform these into a single, detailed research question that will guide
+the research process. Do NOT decompose into subtopics or sub-questions —
+a downstream coordinator handles that.
 
 <messages>
 {messages}
@@ -16,14 +17,23 @@ research process.
 Today's date is {date}.
 
 Guidelines:
-1. Extract the core research question and break it into specific sub-questions.
-2. Identify key topics and subtopics that need investigation.
-3. Preserve all user-specified constraints, preferences, and context.
-4. If the user mentions specific sources or domains, include them.
-5. Do not invent requirements the user did not state — leave unspecified
-   dimensions open rather than assuming.
-6. Phrase the brief from the user's perspective.
-7. Be specific and detailed — this brief is the sole input the researcher sees."""
+1. Maximize specificity — include all known user preferences, constraints,
+   and context. Every detail from the user should be captured.
+2. Fill unstated but necessary dimensions as open-ended — if certain
+   attributes are essential for meaningful research but the user has not
+   provided them, explicitly state that they are open-ended or default to
+   no specific constraint. Do not invent requirements.
+3. Avoid unwarranted assumptions — if the user has not provided a
+   particular detail, do not invent one. State the lack of specification
+   and guide the researcher to treat it as flexible.
+4. If specific sources should be prioritized, include them. For product
+   research, prefer official or primary websites. For academic queries,
+   prefer original papers. For people, prefer LinkedIn or personal sites.
+5. If the query is in a specific language, note to prioritize sources
+   published in that language.
+6. Phrase from the user's perspective — preserve their voice and intent.
+7. Be thorough — this research question is the sole input the coordinator
+   sees when deciding how to decompose and assign research."""
 
 
 research_system_prompt = """\

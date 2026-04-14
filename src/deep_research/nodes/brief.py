@@ -47,17 +47,10 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
 
     logger.info("Generating research brief from %d messages", len(state["messages"]))
     brief: ResearchBrief = await model.ainvoke([HumanMessage(content=prompt)])
-    logger.info("Brief generated: %s (%d questions, %d topics)",
-                brief.title, len(brief.research_questions), len(brief.key_topics))
+    logger.info("Brief generated: %s", brief.title)
 
     # Store as formatted string for downstream consumption
-    brief_str = (
-        f"Title: {brief.title}\n\n"
-        f"Research Questions:\n"
-        + "\n".join(f"- {q}" for q in brief.research_questions)
-        + f"\n\nKey Topics:\n"
-        + "\n".join(f"- {t}" for t in brief.key_topics)
-    )
+    brief_str = f"Title: {brief.title}\n\n{brief.research_question}"
 
     # TODO: Consider whether downstream nodes (researcher, report) should also
     # receive the original user messages alongside the brief. The brief is the

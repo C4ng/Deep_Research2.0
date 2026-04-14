@@ -54,12 +54,16 @@ async def test_write_research_brief_returns_brief(sample_state):
 
 @pytest.mark.asyncio
 async def test_write_research_brief_has_structure(sample_state):
-    """Brief output contains title, questions, and topics."""
+    """Brief output contains title and a research question paragraph."""
     result = await write_research_brief(sample_state, config={"configurable": {}})
     brief = result["research_brief"]
     assert "Title:" in brief
-    assert "Research Questions:" in brief
-    assert "Key Topics:" in brief
+    # Should be a single research question paragraph, not decomposed lists
+    assert "Research Questions:" not in brief
+    assert "Key Topics:" not in brief
+    # Title line + blank line + question paragraph
+    lines = brief.strip().split("\n")
+    assert len(lines) >= 2
 
 
 @pytest.mark.asyncio
@@ -67,7 +71,7 @@ async def test_final_report_generation():
     """Report node produces a non-empty markdown report from notes."""
     state = {
         "messages": [],
-        "research_brief": "Title: Coral Reef Bleaching\n\nResearch Questions:\n- What causes bleaching?",
+        "research_brief": "Title: Coral Reef Bleaching\n\nWhat are the main causes and effects of coral reef bleaching?",
         "notes": (
             "Coral bleaching occurs when water temperatures rise above 1°C "
             "over the summer maximum for 4+ weeks. The primary cause is climate "
