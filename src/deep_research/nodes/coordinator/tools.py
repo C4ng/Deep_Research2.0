@@ -1,6 +1,6 @@
-"""Supervisor tools — conduct_research dispatches a researcher subgraph.
+"""Coordinator tools — dispatch_research dispatches a researcher subgraph.
 
-The tool is called by the supervisor LLM to research a specific subtopic.
+The tool is called by the coordinator LLM to research a specific subtopic.
 Each invocation runs a full researcher subgraph (search → reflect loop →
 summarize) and returns a structured ResearchResult as JSON.
 """
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @tool
-async def conduct_research(
+async def dispatch_research(
     topic: str,
     context: str,
     config: Annotated[RunnableConfig | None, InjectedToolArg] = None,
@@ -29,7 +29,7 @@ async def conduct_research(
         topic: Focused research topic to investigate.
         context: Why this topic matters and what angle to investigate.
     """
-    logger.info("conduct_research dispatching researcher for: %s", topic)
+    logger.info("dispatch_research dispatching researcher for: %s", topic)
 
     initial_state = {
         "messages": [],
@@ -55,7 +55,7 @@ async def conduct_research(
     )
 
     logger.info(
-        "conduct_research completed: topic=%s, knowledge_state=%s, "
+        "dispatch_research completed: topic=%s, knowledge_state=%s, "
         "findings=%d, gaps=%d",
         topic,
         research_result.knowledge_state,

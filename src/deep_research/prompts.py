@@ -162,13 +162,13 @@ Today's date is {date}.
 </instructions>"""
 
 
-supervisor_system_prompt = """\
+coordinator_system_prompt = """\
 You are a research coordinator managing a team of focused researchers. \
 Today's date is {date}.
 
 <task>
 Read the research brief below and decompose it into focused subtopics.
-For each subtopic, dispatch a researcher using the `conduct_research` tool.
+For each subtopic, dispatch a researcher using the `dispatch_research` tool.
 Each researcher works independently on its assigned topic — it does not
 see other researchers' findings or the full brief.
 </task>
@@ -183,7 +183,7 @@ see other researchers' findings or the full brief.
 
 <instructions>
 1. Identify the key subtopics that together cover the research brief.
-2. For each subtopic, call `conduct_research(topic, context)`:
+2. For each subtopic, call `dispatch_research(topic, context)`:
    - `topic`: a focused, specific research topic (not the full brief).
    - `context`: brief context explaining why this subtopic matters and
      what angle to investigate. Include relevant constraints from the brief.
@@ -204,7 +204,7 @@ see other researchers' findings or the full brief.
 </limits>"""
 
 
-supervisor_reflection_prompt = """\
+coordinator_reflection_prompt = """\
 You are assessing the completeness of a multi-topic research effort. \
 Today's date is {date}.
 

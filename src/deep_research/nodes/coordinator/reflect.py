@@ -1,4 +1,4 @@
-"""Supervisor reflection node — assess cross-topic completeness and route.
+"""Coordinator reflection node — assess cross-topic completeness and route.
 
 Evaluates all research results against the original brief, identifies
 cross-topic gaps and contradictions, and decides whether to continue
@@ -15,10 +15,10 @@ from langgraph.types import Command
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
-from deep_research.models import ResearchResult, SupervisorReflection
-from deep_research.nodes.supervisor.supervisor import _format_research_results
-from deep_research.prompts import supervisor_reflection_prompt
-from deep_research.state import SupervisorState
+from deep_research.models import ResearchResult, CoordinatorReflection
+from deep_research.nodes.coordinator.coordinator import _format_research_results
+from deep_research.prompts import coordinator_reflection_prompt
+from deep_research.state import CoordinatorState
 
 logger = logging.getLogger(__name__)
 
@@ -32,8 +32,8 @@ def _merge_notes(results: list[ResearchResult]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _format_reflection_guidance(reflection: SupervisorReflection) -> str:
-    """Format reflection output as guidance for the next supervisor round."""
+def _format_reflection_guidance(reflection: CoordinatorReflection) -> str:
+    """Format reflection output as guidance for the next coordinator round."""
     parts = [reflection.overall_assessment, ""]
 
     if reflection.coverage_gaps:
@@ -48,17 +48,17 @@ def _format_reflection_guidance(reflection: SupervisorReflection) -> str:
     return "\n".join(parts)
 
 
-async def supervisor_reflect(
-    state: SupervisorState, config: RunnableConfig
-) -> Command[Literal["supervisor", "__end__"]]:
+async def coordinator_reflect(
+    state: CoordinatorState, config: RunnableConfig
+) -> Command[Literal["coordinator", "__end__"]]:
     """Assess cross-topic research completeness and route.
 
     On exit: merges all researcher notes into combined notes for the report.
-    On continue: formats reflection as guidance for the next supervisor round.
+    On continue: formats reflection as guidance for the next coordinator round.
     """
     configurable = Configuration.from_runnable_config(config)
-    iteration = state.get("supervisor_iterations", 0) + 1
-    logger.info("Supervisor reflection round %d", iteration)
+    iteration = state.get("coordinator_iterations", 0) + 1
+    logger.info("Coordinator reflection round %d", iteration)
 
     # Build reflection prompt
     results = state.get("research_results", [])
@@ -74,12 +74,12 @@ async def supervisor_reflect(
 
     model = (
         configurable_model
-        .with_structured_output(SupervisorReflection)
+        .with_structured_output(CoordinatorReflection)
         .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
         .with_config(configurable=model_config)
     )
 
-    prompt = supervisor_reflection_prompt.format(
+    prompt = coordinator_reflection_prompt.format(
         research_brief=state["research_brief"],
         research_results=formatted_results,
         date=datetime.now().strftime("%B %d, %Y"),
@@ -88,7 +88,7 @@ async def supervisor_reflect(
     reflection = await model.ainvoke([HumanMessage(content=prompt)])
 
     logger.info(
-        "Supervisor reflection: knowledge_state=%s, should_continue=%s, "
+        "Coordinator reflection: knowledge_state=%s, should_continue=%s, "
         "gaps=%d, contradictions=%d",
         reflection.knowledge_state,
         reflection.should_continue,
@@ -99,33 +99,33 @@ async def supervisor_reflect(
     should_stop = (
         not reflection.should_continue
         or reflection.knowledge_state == "sufficient"
-        or iteration >= configurable.max_supervisor_iterations
+        or iteration >= configurable.max_coordinator_iterations
     )
 
     if should_stop:
-        if iteration >= configurable.max_supervisor_iterations:
+        if iteration >= configurable.max_coordinator_iterations:
             logger.warning(
-                "Forcing exit — max supervisor iterations (%d) reached",
+                "Forcing exit — max coordinator iterations (%d) reached",
                 iteration,
             )
         combined_notes = _merge_notes(results)
-        logger.info("Supervisor routing to END, merged %d researcher notes", len(results))
+        logger.info("Coordinator routing to END, merged %d researcher notes", len(results))
         return Command(
             goto="__end__",
             update={
                 "notes": combined_notes,
-                "supervisor_iterations": iteration,
-                "last_supervisor_reflection": "",
+                "coordinator_iterations": iteration,
+                "last_coordinator_reflection": "",
             },
         )
 
     guidance = _format_reflection_guidance(reflection)
-    logger.info("Supervisor routing back for round %d", iteration + 1)
+    logger.info("Coordinator routing back for round %d", iteration + 1)
     return Command(
-        goto="supervisor",
+        goto="coordinator",
         update={
-            "supervisor_iterations": iteration,
-            "last_supervisor_reflection": guidance,
+            "coordinator_iterations": iteration,
+            "last_coordinator_reflection": guidance,
             "messages": [],
         },
     )

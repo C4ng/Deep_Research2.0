@@ -12,9 +12,9 @@ from deep_research.nodes.brief import write_research_brief
 from deep_research.nodes.researcher.summarizer import summarize_research
 from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection
 from deep_research.nodes.report import final_report_generation
-from deep_research.models import SupervisorReflection
-from deep_research.nodes.supervisor.reflect import _merge_notes, _format_reflection_guidance
-from deep_research.nodes.supervisor.supervisor import _format_research_results
+from deep_research.models import CoordinatorReflection
+from deep_research.nodes.coordinator.reflect import _merge_notes, _format_reflection_guidance
+from deep_research.nodes.coordinator.coordinator import _format_research_results
 from deep_research.tools.registry import get_all_tools
 
 
@@ -231,7 +231,7 @@ def test_current_gaps_overwrite():
     assert "old gap 1" not in state["current_gaps"]
 
 
-# --- Supervisor formatting tests (no API calls) ---
+# --- Coordinator formatting tests (no API calls) ---
 
 
 def test_format_research_results_empty():
@@ -307,7 +307,7 @@ def test_format_research_results_no_optional_fields():
     assert "Contradictions" not in formatted
 
 
-# --- Supervisor reflection helpers (no API calls) ---
+# --- Coordinator reflection helpers (no API calls) ---
 
 
 def test_merge_notes_combines_with_headers():
@@ -348,7 +348,7 @@ def test_merge_notes_skips_empty():
 
 def test_format_reflection_guidance_full():
     """Formats guidance with assessment, gaps, and contradictions."""
-    reflection = SupervisorReflection(
+    reflection = CoordinatorReflection(
         overall_assessment="Good coverage but missing pricing data.",
         cross_topic_contradictions=["Researcher 1 says X, Researcher 2 says Y"],
         coverage_gaps=["No pricing comparison", "Missing regulatory analysis"],
@@ -364,7 +364,7 @@ def test_format_reflection_guidance_full():
 
 def test_format_reflection_guidance_no_gaps_or_contradictions():
     """Guidance with only assessment when no gaps or contradictions."""
-    reflection = SupervisorReflection(
+    reflection = CoordinatorReflection(
         overall_assessment="All topics well covered.",
         should_continue=False,
         knowledge_state="sufficient",

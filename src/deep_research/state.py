@@ -2,7 +2,7 @@
 
 AgentState: top-level state for the main graph.
 ResearcherState: isolated state for the researcher subgraph.
-SupervisorState: state for the supervisor subgraph.
+CoordinatorState: state for the coordinator subgraph.
 """
 
 import operator
@@ -24,7 +24,7 @@ class AgentState(TypedDict):
     """Structured research brief generated from the user query."""
 
     notes: str
-    """Accumulated research findings (combined from supervisor or single researcher)."""
+    """Accumulated research findings (combined from coordinator or single researcher)."""
 
     final_report: str
     """The final markdown report output."""
@@ -66,16 +66,16 @@ class ResearcherState(TypedDict):
     """Summarizer output — compressed research notes."""
 
 
-class SupervisorState(TypedDict):
-    """State for the supervisor subgraph.
+class CoordinatorState(TypedDict):
+    """State for the coordinator subgraph.
 
-    The supervisor decomposes a research brief into subtopics, dispatches
+    The coordinator decomposes a research brief into subtopics, dispatches
     researchers, collects results, reflects on cross-topic completeness,
     and decides whether follow-up research is needed.
     """
 
     messages: Annotated[list, add_messages]
-    """Tool-calling messages (supervisor LLM + conduct_research tool results)."""
+    """Tool-calling messages (coordinator LLM + dispatch_research tool results)."""
 
     research_brief: str
     """The full research brief from write_brief."""
@@ -83,11 +83,11 @@ class SupervisorState(TypedDict):
     research_results: Annotated[list[ResearchResult], operator.add]
     """Results from all dispatched researchers (append reducer)."""
 
-    last_supervisor_reflection: str
-    """Formatted reflection guidance for the next supervisor round (overwrite)."""
+    last_coordinator_reflection: str
+    """Formatted reflection guidance for the next coordinator round (overwrite)."""
 
-    supervisor_iterations: int
-    """Number of supervisor reflection cycles completed."""
+    coordinator_iterations: int
+    """Number of coordinator reflection cycles completed."""
 
     notes: str
     """Combined notes from all researchers for the final report."""

@@ -1,7 +1,7 @@
-"""Supervisor node functions — LLM invocation and tool execution.
+"""Coordinator node functions — LLM invocation and tool execution.
 
-- `supervisor`: one LLM call with conduct_research tool bound
-- `supervisor_tools`: execute tool calls, parse ResearchResult from responses
+- `coordinator`: one LLM call with dispatch_research tool bound
+- `coordinator_tools`: execute tool calls, parse ResearchResult from responses
 """
 
 import logging
@@ -13,15 +13,15 @@ from langchain_core.runnables import RunnableConfig
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
 from deep_research.models import ResearchResult
-from deep_research.nodes.supervisor.tools import conduct_research
-from deep_research.prompts import supervisor_system_prompt
-from deep_research.state import SupervisorState
+from deep_research.nodes.coordinator.tools import dispatch_research
+from deep_research.prompts import coordinator_system_prompt
+from deep_research.state import CoordinatorState
 
 logger = logging.getLogger(__name__)
 
 
 def _format_research_results(results: list[ResearchResult]) -> str:
-    """Format research results as metadata summary for the supervisor prompt.
+    """Format research results as metadata summary for the coordinator prompt.
 
     Includes topic, knowledge_state, key_findings, missing_info,
     contradictions — but NOT full notes (context engineering).
@@ -51,8 +51,8 @@ def _format_research_results(results: list[ResearchResult]) -> str:
     return "\n\n".join(parts)
 
 
-async def supervisor(state: SupervisorState, config: RunnableConfig) -> dict:
-    """Invoke the supervisor model with conduct_research tool bound.
+async def coordinator(state: CoordinatorState, config: RunnableConfig) -> dict:
+    """Invoke the coordinator model with dispatch_research tool bound.
 
     Builds context from research_brief, prior research results (metadata
     only), and reflection guidance. Each round gets fresh messages —
@@ -68,7 +68,7 @@ async def supervisor(state: SupervisorState, config: RunnableConfig) -> dict:
     if configurable.research_model_thinking_budget is not None:
         model_config["thinking_budget"] = configurable.research_model_thinking_budget
 
-    tools = [conduct_research]
+    tools = [dispatch_research]
     model = (
         configurable_model
         .bind_tools(tools)
@@ -82,7 +82,7 @@ async def supervisor(state: SupervisorState, config: RunnableConfig) -> dict:
     )
 
     system_parts = [
-        supervisor_system_prompt.format(
+        coordinator_system_prompt.format(
             research_brief=state["research_brief"],
             prior_research=prior_research,
             max_research_topics=configurable.max_research_topics,
@@ -90,7 +90,7 @@ async def supervisor(state: SupervisorState, config: RunnableConfig) -> dict:
         )
     ]
 
-    last_reflection = state.get("last_supervisor_reflection", "")
+    last_reflection = state.get("last_coordinator_reflection", "")
     if last_reflection:
         system_parts.append(
             f"\n<prior_reflection>\n{last_reflection}\n</prior_reflection>"
@@ -108,18 +108,18 @@ async def supervisor(state: SupervisorState, config: RunnableConfig) -> dict:
         HumanMessage(content=trigger),
     ]
 
-    logger.info("Supervisor invoking LLM (%d prior results)", len(state.get("research_results", [])))
+    logger.info("Coordinator invoking LLM (%d prior results)", len(state.get("research_results", [])))
     response = await model.ainvoke(messages)
     tool_count = len(response.tool_calls) if response.tool_calls else 0
-    logger.info("Supervisor LLM responded: %d tool calls", tool_count)
+    logger.info("Coordinator LLM responded: %d tool calls", tool_count)
 
     return {"messages": [response]}
 
 
-async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> dict:
-    """Execute supervisor tool calls and parse ResearchResults.
+async def coordinator_tools(state: CoordinatorState, config: RunnableConfig) -> dict:
+    """Execute coordinator tool calls and parse ResearchResults.
 
-    Each tool call runs a researcher subgraph via conduct_research.
+    Each tool call runs a researcher subgraph via dispatch_research.
     Parses the JSON response back into ResearchResult for state accumulation.
     """
     messages = state.get("messages", [])
@@ -128,11 +128,11 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> di
     if not most_recent or not most_recent.tool_calls:
         return {}
 
-    tools = [conduct_research]
+    tools = [dispatch_research]
     tools_by_name = {t.name: t for t in tools}
 
     tool_names = [tc["name"] for tc in most_recent.tool_calls if tc["name"] in tools_by_name]
-    logger.info("Supervisor executing %d tool calls: %s", len(tool_names), tool_names)
+    logger.info("Coordinator executing %d tool calls: %s", len(tool_names), tool_names)
 
     # Execute tool calls sequentially (each spawns a full researcher subgraph)
     # TODO(parallel): Switch to asyncio.gather for parallel execution in Increment 5
@@ -173,5 +173,5 @@ async def supervisor_tools(state: SupervisorState, config: RunnableConfig) -> di
                 )
             )
 
-    logger.info("Supervisor tools completed: %d results collected", len(new_results))
+    logger.info("Coordinator tools completed: %d results collected", len(new_results))
     return {"messages": tool_messages, "research_results": new_results}

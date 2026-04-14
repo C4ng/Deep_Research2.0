@@ -65,8 +65,8 @@ class ResearchReflection(BaseModel):
 class ResearchResult(BaseModel):
     """Result from a single researcher, built from accumulated state fields.
 
-    Returned by the conduct_research tool. Carries structured metadata
-    so the supervisor can assess cross-topic completeness without re-reading
+    Returned by the dispatch_research tool. Carries structured metadata
+    so the coordinator can assess cross-topic completeness without re-reading
     full notes.
     """
 
@@ -88,10 +88,10 @@ class ResearchResult(BaseModel):
     )
 
 
-class SupervisorReflection(BaseModel):
-    """Structured reflection by the supervisor after collecting research results.
+class CoordinatorReflection(BaseModel):
+    """Structured reflection by the coordinator after collecting research results.
 
-    Assesses cross-topic completeness. The supervisor LLM decides what
+    Assesses cross-topic completeness. The coordinator LLM decides what
     follow-up research to conduct based on gaps and contradictions.
     """
 

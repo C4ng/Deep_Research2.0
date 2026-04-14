@@ -14,18 +14,18 @@ from deep_research.graph.graph import build_graph, deep_researcher
 from deep_research.models import (
     ResearchReflection,
     ResearchResult,
-    SupervisorReflection,
+    CoordinatorReflection,
 )
-from deep_research.state import AgentState, ResearcherState, SupervisorState
+from deep_research.state import AgentState, CoordinatorState, ResearcherState
 
 __all__ = [
     "AgentState",
     "Configuration",
+    "CoordinatorState",
     "ResearchReflection",
     "ResearchResult",
     "ResearcherState",
-    "SupervisorReflection",
-    "SupervisorState",
+    "CoordinatorReflection",
     "build_graph",
     "deep_researcher",
 ]
