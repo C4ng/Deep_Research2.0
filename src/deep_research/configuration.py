@@ -100,10 +100,14 @@ class Configuration(BaseModel):
         description="Maximum retries for structured output and model calls",
     )
 
-    # Clarification
+    # Human-in-the-loop
     allow_clarification: bool = Field(
         default=True,
         description="Whether to ask clarifying questions before research",
+    )
+    allow_human_review: bool = Field(
+        default=True,
+        description="Whether to pause for user review of the research plan",
     )
 
     # Coordinator limits
