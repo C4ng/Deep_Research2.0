@@ -265,22 +265,30 @@ src/deep_research/
 
 **Delivers**: Trustworthy, well-structured reports. Every citation verifiable, contradictions and limitations surfaced honestly.
 
-### Increment 7 — Dead-End Handling + Quality (Differentiators)
-**Goal**: The features from DESIGN_REFERENCE.md Section 6 that set us apart.
+### Increment 7 — Research Quality + Report Polish
+**Goal**: Quality differentiators and fixes from Increment 6 observations.
 
+Research quality:
 - Dead-end detection: compare `missing_info` across reflection rounds → reformulate
-- Contradiction resolution: non-empty `contradictions` → targeted follow-up searches
+- Contradiction resolution: non-empty `contradictions` → targeted follow-up searches, trust scoring
+- Contradiction dedup: fix `accumulated_contradictions` append reducer duplication
+- URL authority scoring on search results (+weight for .gov/.edu — trust signal for contradiction resolution)
 - Multi-source cross-referencing: findings confirmed by multiple sources carry higher confidence; corroboration tracking in reflection (complement to contradiction detection — same mechanism, opposite signal)
 - Coordinator handles low-confidence researcher returns (reassign or accept partial)
-- Light review pass on final report (claims vs sources check)
-- Token-limit retry with progressive truncation
 
-**Delivers**: Robust, quality-aware research.
+Report polish (from Increment 6 observations):
+- Report structure refinement: better visual hierarchy for contradictions, summary "Areas for Further Research" section alongside inline context
+- Hallucinated citation handling: mark removed citations as `[citation needed]` instead of silent removal
+- Light review pass on final report (claims vs sources check)
+
+**Delivers**: Robust, quality-aware research with polished, trustworthy reports.
 
 ### Increment 8 — Extensions + Provider Flexibility
+**Goal**: Infrastructure extensibility and resilience.
+
 - Multi-provider model support (Claude, OpenAI) + config resolver
 - API key routing per provider
 - Second search provider: `BraveSearchTool(BaseSearchTool)`
-- URL authority scoring on search results
-- Two-tier notes (raw + compressed)
+- Two-tier notes (raw + compressed) — debugging visibility
+- Token-limit retry with progressive truncation — resilience
 - CLI interface (`cli.py`)
