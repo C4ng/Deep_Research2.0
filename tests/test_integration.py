@@ -47,6 +47,7 @@ INITIAL_STATE = {
     "research_brief": "",
     "is_simple": False,
     "notes": "",
+    "report_metadata": "",
     "final_report": "",
 }
 

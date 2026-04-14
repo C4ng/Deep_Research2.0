@@ -34,4 +34,20 @@ async def run_single_researcher(state: AgentState, config: RunnableConfig) -> di
         "notes": "",
     }
     result = await researcher_subgraph.ainvoke(initial_state, config)
-    return {"notes": result["notes"]}
+
+    # Format metadata for the report node
+    metadata_parts = []
+    knowledge = result.get("final_knowledge_state", "")
+    if knowledge:
+        metadata_parts.append(f"Coverage: {knowledge}")
+    if result.get("accumulated_contradictions"):
+        metadata_parts.append("### Contradictions")
+        metadata_parts.extend(f"- {c}" for c in result["accumulated_contradictions"])
+    if result.get("current_gaps"):
+        metadata_parts.append("### Persistent Gaps (searched but not found)")
+        metadata_parts.extend(f"- {g}" for g in result["current_gaps"])
+
+    return {
+        "notes": result["notes"],
+        "report_metadata": "\n".join(metadata_parts),
+    }

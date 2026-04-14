@@ -29,6 +29,9 @@ class AgentState(TypedDict):
     notes: str
     """Accumulated research findings (combined from coordinator or single researcher)."""
 
+    report_metadata: str
+    """Formatted research metadata for the report: contradictions, gaps, knowledge states."""
+
     final_report: str
     """The final markdown report output."""
 
@@ -94,3 +97,6 @@ class CoordinatorState(TypedDict):
 
     notes: str
     """Combined notes from all researchers for the final report."""
+
+    report_metadata: str
+    """Formatted research metadata for the report: contradictions, gaps, knowledge states."""

@@ -15,7 +15,7 @@ from langgraph.types import Command
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import configurable_model
-from deep_research.models import ResearchResult, CoordinatorReflection
+from deep_research.models import CoordinatorReflection, ResearchResult
 from deep_research.nodes.coordinator.coordinator import _format_research_results
 from deep_research.prompts import coordinator_reflection_prompt
 from deep_research.state import CoordinatorState
@@ -30,6 +30,47 @@ def _merge_notes(results: list[ResearchResult]) -> str:
         if r.notes:
             parts.append(f"## Topic: {r.topic}\n\n{r.notes}")
     return "\n\n---\n\n".join(parts)
+
+
+def _format_report_metadata(
+    results: list[ResearchResult],
+    reflection: CoordinatorReflection,
+) -> str:
+    """Format research metadata for the report node.
+
+    Combines per-researcher signals (contradictions, gaps, knowledge_state)
+    with coordinator-level signals (cross-topic contradictions, coverage gaps,
+    overall assessment). The report prompt uses this to surface contradictions
+    and gaps honestly.
+    """
+    parts = []
+
+    # Per-topic signals
+    for r in results:
+        section = [f"### {r.topic}"]
+        section.append(f"Coverage: {r.knowledge_state}")
+        if r.contradictions:
+            section.append("Contradictions:")
+            section.extend(f"- {c}" for c in r.contradictions)
+        if r.missing_info:
+            section.append("Persistent gaps (searched but not found):")
+            section.extend(f"- {g}" for g in r.missing_info)
+        parts.append("\n".join(section))
+
+    # Cross-topic signals from coordinator reflection
+    if reflection.cross_topic_contradictions:
+        cross = ["### Cross-Topic Contradictions"]
+        cross.extend(f"- {c}" for c in reflection.cross_topic_contradictions)
+        parts.append("\n".join(cross))
+
+    if reflection.coverage_gaps:
+        gaps = ["### Coverage Gaps (not investigated)"]
+        gaps.extend(f"- {g}" for g in reflection.coverage_gaps)
+        parts.append("\n".join(gaps))
+
+    parts.append(f"### Overall Assessment\n{reflection.overall_assessment}")
+
+    return "\n\n".join(parts)
 
 
 def _format_reflection_guidance(reflection: CoordinatorReflection) -> str:
@@ -109,11 +150,13 @@ async def coordinator_reflect(
                 iteration,
             )
         combined_notes = _merge_notes(results)
+        report_metadata = _format_report_metadata(results, reflection)
         logger.info("Coordinator routing to END, merged %d researcher notes", len(results))
         return Command(
             goto="__end__",
             update={
                 "notes": combined_notes,
+                "report_metadata": report_metadata,
                 "coordinator_iterations": iteration,
                 "last_coordinator_reflection": "",
             },
