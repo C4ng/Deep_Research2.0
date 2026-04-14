@@ -39,7 +39,18 @@ a recommended approach.
 {messages}
 </messages>
 
+<prior_brief>
+{prior_brief}
+</prior_brief>
+
+<user_feedback>
+{feedback}
+</user_feedback>
+
 Today's date is {date}.
+
+If a prior brief and user feedback are provided above, revise the brief
+to incorporate the feedback. Otherwise, create a fresh brief.
 
 Research question — what to investigate:
 1. Capture the user's question with full specificity — include all

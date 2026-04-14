@@ -116,8 +116,14 @@ def route_by_complexity(state: AgentState) -> str:
     return "coordinator"
 
 
-def build_graph() -> StateGraph:
-    """Build and compile the main research graph."""
+def build_graph(checkpointer=None):
+    """Build and compile the main research graph.
+
+    Args:
+        checkpointer: LangGraph checkpointer for state persistence.
+            Required for human-in-the-loop features (interrupt/resume).
+            Use MemorySaver for dev/test, a persistent store for production.
+    """
     graph = StateGraph(AgentState)
 
     graph.add_node("clarify", clarify_with_user)
@@ -135,8 +141,8 @@ def build_graph() -> StateGraph:
     graph.add_edge("coordinator", "final_report")
     graph.add_edge("final_report", END)
 
-    return graph.compile()
+    return graph.compile(checkpointer=checkpointer)
 
 
-# Pre-compiled graph instance
+# Pre-compiled graph instance (no checkpointer — add one for HITL use)
 deep_researcher = build_graph()

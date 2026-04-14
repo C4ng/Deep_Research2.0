@@ -43,6 +43,8 @@ async def write_research_brief(state: AgentState, config: RunnableConfig) -> dic
     prompt = research_brief_prompt.format(
         messages=messages_str,
         date=datetime.now().strftime("%B %d, %Y"),
+        prior_brief="",
+        feedback="",
     )
 
     logger.info("Generating research brief from %d messages", len(state["messages"]))
