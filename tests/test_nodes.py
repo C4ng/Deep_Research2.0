@@ -10,7 +10,7 @@ import pytest
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
 from deep_research.models import ClarifyOutput, ResearchBrief, ResearchReflection, ResearchResult
-from deep_research.nodes.brief import write_research_brief
+from deep_research.nodes.brief import _format_brief, write_research_brief
 from deep_research.nodes.clarify import clarify_with_user
 from deep_research.nodes.researcher.summarizer import summarize_research
 from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection
@@ -444,7 +444,21 @@ def test_research_brief_simple():
     assert brief.is_simple is True
 
 
-# --- Brief approach output ---
+# --- Brief helper + routing tests ---
+
+
+def test_format_brief():
+    """_format_brief produces Title/question/Approach string."""
+    brief = ResearchBrief(
+        title="Test Title",
+        research_question="What is X?",
+        approach="Survey approach.",
+        is_simple=False,
+    )
+    result = _format_brief(brief)
+    assert "Title: Test Title" in result
+    assert "What is X?" in result
+    assert "Approach: Survey approach." in result
 
 
 @pytest.mark.asyncio
@@ -453,6 +467,164 @@ async def test_write_research_brief_includes_approach(sample_state):
     result = await write_research_brief(sample_state, config={"configurable": {}})
     brief = result.update["research_brief"]
     assert "Approach:" in brief
+
+
+@pytest.mark.asyncio
+async def test_brief_review_disabled_routes_to_researcher():
+    """Review disabled + is_simple=True → routes to researcher."""
+    mock_brief = ResearchBrief(
+        title="React Version",
+        research_question="What is the latest React version?",
+        approach="Factual lookup.",
+        is_simple=True,
+    )
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
+
+    state = {
+        "messages": [HumanMessage(content="What is the latest React version?")],
+        "research_brief": "",
+        "is_simple": False,
+        "notes": "",
+        "final_report": "",
+    }
+    config = {"configurable": {"allow_human_review": False}}
+
+    with patch("deep_research.nodes.brief.configurable_model") as mock_model:
+        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
+        result = await write_research_brief(state, config)
+
+    assert result.goto == "researcher"
+    assert result.update["is_simple"] is True
+
+
+@pytest.mark.asyncio
+async def test_brief_review_disabled_routes_to_coordinator():
+    """Review disabled + is_simple=False → routes to coordinator."""
+    mock_brief = ResearchBrief(
+        title="Quantum Computing",
+        research_question="What is the state of quantum computing?",
+        approach="Broad survey.",
+        is_simple=False,
+    )
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
+
+    state = {
+        "messages": [HumanMessage(content="What is the state of quantum computing?")],
+        "research_brief": "",
+        "is_simple": False,
+        "notes": "",
+        "final_report": "",
+    }
+    config = {"configurable": {"allow_human_review": False}}
+
+    with patch("deep_research.nodes.brief.configurable_model") as mock_model:
+        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
+        result = await write_research_brief(state, config)
+
+    assert result.goto == "coordinator"
+    assert result.update["is_simple"] is False
+
+
+@pytest.mark.asyncio
+async def test_brief_review_enabled_first_draft_exits():
+    """Review enabled + first draft (ready_to_proceed=False) → exits to __end__."""
+    mock_brief = ResearchBrief(
+        title="Quantum Computing",
+        research_question="What is the state of quantum computing?",
+        approach="Broad survey.",
+        is_simple=False,
+    )
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
+
+    state = {
+        "messages": [HumanMessage(content="What is the state of quantum computing?")],
+        "research_brief": "",
+        "is_simple": False,
+        "notes": "",
+        "final_report": "",
+    }
+    config = {"configurable": {"allow_human_review": True}}
+
+    with patch("deep_research.nodes.brief.configurable_model") as mock_model:
+        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
+        result = await write_research_brief(state, config)
+
+    assert result.goto == "__end__"
+    assert "research_brief" in result.update
+    # Brief shown as AIMessage
+    messages = result.update["messages"]
+    assert len(messages) == 1
+    assert isinstance(messages[0], AIMessage)
+
+
+@pytest.mark.asyncio
+async def test_brief_revision_approved_proceeds():
+    """Revision with ready_to_proceed=True → routes to next node."""
+    mock_brief = ResearchBrief(
+        title="Quantum Computing",
+        research_question="What is the state of quantum computing?",
+        approach="Broad survey.",
+        is_simple=False,
+        ready_to_proceed=True,
+    )
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
+
+    state = {
+        "messages": [
+            HumanMessage(content="quantum computing"),
+            AIMessage(content="Title: Quantum...\n\nQuestion\n\nApproach: Survey"),
+            HumanMessage(content="looks good, go ahead"),
+        ],
+        "research_brief": "Title: Quantum...\n\nQuestion\n\nApproach: Survey",
+        "is_simple": False,
+        "notes": "",
+        "final_report": "",
+    }
+    config = {"configurable": {"allow_human_review": True}}
+
+    with patch("deep_research.nodes.brief.configurable_model") as mock_model:
+        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
+        result = await write_research_brief(state, config)
+
+    assert result.goto == "coordinator"
+
+
+@pytest.mark.asyncio
+async def test_brief_revision_feedback_exits_again():
+    """Revision with ready_to_proceed=False → exits to __end__ for another review."""
+    mock_brief = ResearchBrief(
+        title="Quantum Computing",
+        research_question="Focus on hardware approaches.",
+        approach="Deep dive into hardware.",
+        is_simple=False,
+        ready_to_proceed=False,
+    )
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
+
+    state = {
+        "messages": [
+            HumanMessage(content="quantum computing"),
+            AIMessage(content="Title: Quantum...\n\nQuestion\n\nApproach: Survey"),
+            HumanMessage(content="focus more on hardware"),
+        ],
+        "research_brief": "Title: Quantum...\n\nQuestion\n\nApproach: Survey",
+        "is_simple": False,
+        "notes": "",
+        "final_report": "",
+    }
+    config = {"configurable": {"allow_human_review": True}}
+
+    with patch("deep_research.nodes.brief.configurable_model") as mock_model:
+        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
+        result = await write_research_brief(state, config)
+
+    assert result.goto == "__end__"
+    assert "hardware" in result.update["research_brief"]
 
 
 # --- Clarify node tests (mocked LLM) ---
