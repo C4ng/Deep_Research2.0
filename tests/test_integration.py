@@ -1,13 +1,22 @@
 """End-to-end integration test — runs the full pipeline.
 
 Hits real APIs (Gemini + Tavily). Requires valid API keys in .env.
-This is slow (~30-60s) so it's separated from unit/node tests.
+This is slow (~2-5 min) so it's separated from unit/node tests.
 """
 
 import pytest
 from langchain_core.messages import HumanMessage
 
 from deep_research.graph.graph import build_graph
+
+
+# Disable human-in-the-loop for automated tests
+AUTOMATED_CONFIG = {
+    "configurable": {
+        "allow_clarification": False,
+        "allow_human_review": False,
+    }
+}
 
 
 @pytest.mark.asyncio
@@ -23,7 +32,7 @@ async def test_full_pipeline_produces_report():
             "notes": "",
             "final_report": "",
         },
-        config={"configurable": {}},
+        config=AUTOMATED_CONFIG,
     )
 
     # All state fields should be populated
@@ -36,7 +45,8 @@ async def test_full_pipeline_produces_report():
     assert len(report) > 500, f"Report too short ({len(report)} chars)"
     assert "#" in report, "Report should contain markdown headings"
 
-    # Brief should have title and research question
+    # Brief should have title, research question, and approach
     brief = result["research_brief"]
     assert "Title:" in brief
-    assert len(brief) > 50, "Brief should be a detailed research question"
+    assert "Approach:" in brief
+    assert len(brief) > 50, "Brief should be a detailed research plan"

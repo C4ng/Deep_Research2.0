@@ -4,18 +4,21 @@ API tests hit real APIs — requires valid API keys in .env.
 Unit tests (reflect routing, formatting) run without API calls.
 """
 
-import pytest
-from langchain_core.messages import HumanMessage, ToolMessage
+from unittest.mock import AsyncMock, patch
 
-from deep_research.models import ResearchReflection, ResearchResult
+import pytest
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+
+from deep_research.models import ClarifyOutput, ResearchBrief, ResearchReflection, ResearchResult
 from deep_research.nodes.brief import write_research_brief
+from deep_research.nodes.clarify import clarify_with_user
 from deep_research.nodes.researcher.summarizer import summarize_research
 from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection
 from deep_research.nodes.report import final_report_generation
 from deep_research.models import CoordinatorReflection
 from deep_research.nodes.coordinator.reflect import _merge_notes, _format_reflection_guidance
 from deep_research.nodes.coordinator.coordinator import _format_research_results
-from deep_research.graph.graph import route_by_complexity
+from deep_research.graph.graph import human_review, route_by_complexity
 from deep_research.tools.registry import get_all_tools
 
 
@@ -409,3 +412,178 @@ def test_route_by_complexity_default():
     """Missing is_simple defaults to coordinator."""
     state = {}
     assert route_by_complexity(state) == "coordinator"
+
+
+# --- Schema validation ---
+
+
+def test_clarify_output_needs_clarification():
+    """ClarifyOutput with clarification needed."""
+    output = ClarifyOutput(
+        need_clarification=True,
+        question="What do you mean by 'AI'? Do you mean generative AI or AI in general?",
+        verification="",
+    )
+    assert output.need_clarification is True
+    assert output.question
+    assert output.verification == ""
+
+
+def test_clarify_output_no_clarification():
+    """ClarifyOutput when no clarification needed."""
+    output = ClarifyOutput(
+        need_clarification=False,
+        question="",
+        verification="I understand you want to research quantum computing in 2025.",
+    )
+    assert output.need_clarification is False
+    assert output.question == ""
+    assert output.verification
+
+
+def test_research_brief_schema():
+    """ResearchBrief with all fields including approach."""
+    brief = ResearchBrief(
+        title="Quantum Computing 2025",
+        research_question="What is the current state of quantum computing?",
+        approach="Broad survey covering technology, players, applications, challenges.",
+        is_simple=False,
+    )
+    assert brief.title
+    assert brief.research_question
+    assert brief.approach
+    assert brief.is_simple is False
+
+
+def test_research_brief_simple():
+    """ResearchBrief for a simple question."""
+    brief = ResearchBrief(
+        title="React Version",
+        research_question="What is the latest stable version of React?",
+        approach="Single factual lookup.",
+        is_simple=True,
+    )
+    assert brief.is_simple is True
+
+
+# --- Brief approach output ---
+
+
+@pytest.mark.asyncio
+async def test_write_research_brief_includes_approach(sample_state):
+    """Brief output includes approach section."""
+    result = await write_research_brief(sample_state, config={"configurable": {}})
+    brief = result["research_brief"]
+    assert "Approach:" in brief
+
+
+# --- Clarify node tests (mocked LLM) ---
+
+
+@pytest.mark.asyncio
+async def test_clarify_disabled_skips_to_write_brief(sample_state):
+    """When allow_clarification=False, routes directly to write_brief without LLM call."""
+    config = {"configurable": {"allow_clarification": False}}
+    result = await clarify_with_user(sample_state, config)
+    assert result.goto == "write_brief"
+    # No messages added when skipping
+    assert result.update is None or "messages" not in (result.update or {})
+
+
+@pytest.mark.asyncio
+async def test_clarify_needs_clarification_routes_to_end(sample_state):
+    """When LLM says clarification is needed, routes to __end__ with the question."""
+    mock_output = ClarifyOutput(
+        need_clarification=True,
+        question="Could you specify which aspect of coral bleaching?",
+        verification="",
+    )
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_output)
+
+    with patch("deep_research.nodes.clarify.configurable_model") as mock_model:
+        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
+        result = await clarify_with_user(sample_state, config={"configurable": {}})
+
+    assert result.goto == "__end__"
+    messages = result.update["messages"]
+    assert len(messages) == 1
+    assert isinstance(messages[0], AIMessage)
+    assert "coral bleaching" in messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_clarify_no_clarification_routes_to_write_brief(sample_state):
+    """When LLM says no clarification needed, routes to write_brief with verification."""
+    mock_output = ClarifyOutput(
+        need_clarification=False,
+        question="",
+        verification="I'll research the causes and effects of coral reef bleaching.",
+    )
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_output)
+
+    with patch("deep_research.nodes.clarify.configurable_model") as mock_model:
+        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
+        result = await clarify_with_user(sample_state, config={"configurable": {}})
+
+    assert result.goto == "write_brief"
+    messages = result.update["messages"]
+    assert len(messages) == 1
+    assert isinstance(messages[0], AIMessage)
+    assert "coral reef bleaching" in messages[0].content
+
+
+# --- Human review node tests (mocked interrupt + LLM) ---
+
+
+@pytest.mark.asyncio
+async def test_human_review_disabled_skips():
+    """When allow_human_review=False, returns empty (no interrupt)."""
+    state = {"research_brief": "Title: Test\n\nSome question\n\nApproach: Survey"}
+    config = {"configurable": {"allow_human_review": False}}
+    result = await human_review(state, config)
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_human_review_approved_no_change():
+    """When user approves (empty feedback), returns empty — brief unchanged."""
+    state = {"research_brief": "Title: Test\n\nSome question\n\nApproach: Survey"}
+
+    with patch("deep_research.graph.graph.interrupt", return_value=""):
+        result = await human_review(state, config={"configurable": {}})
+
+    assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_human_review_with_feedback_revises_brief():
+    """When user gives feedback, LLM revises the brief."""
+    original_brief = "Title: Test\n\nSome question\n\nApproach: Survey"
+    state = {"research_brief": original_brief}
+    revised = "Title: Test Revised\n\nRevised question\n\nApproach: Deep analysis"
+
+    mock_response = AsyncMock()
+    mock_response.content = revised
+
+    mock_chain = AsyncMock()
+    mock_chain.ainvoke = AsyncMock(return_value=mock_response)
+
+    with patch("deep_research.graph.graph.interrupt", return_value="Focus more on deep analysis"):
+        with patch("deep_research.graph.graph.configurable_model") as mock_model:
+            mock_model.with_retry.return_value.with_config.return_value = mock_chain
+            result = await human_review(state, config={"configurable": {}})
+
+    assert result["research_brief"] == revised
+
+
+@pytest.mark.asyncio
+async def test_human_review_none_feedback_treated_as_approval():
+    """When interrupt returns None, treated as approval."""
+    state = {"research_brief": "Title: Test\n\nSome question\n\nApproach: Survey"}
+
+    with patch("deep_research.graph.graph.interrupt", return_value=None):
+        result = await human_review(state, config={"configurable": {}})
+
+    assert result == {}
