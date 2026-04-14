@@ -101,7 +101,7 @@ async def coordinator(state: CoordinatorState, config: RunnableConfig) -> dict:
     trigger = (
         "Review the prior research results and reflection, then dispatch follow-up researchers."
         if is_follow_up
-        else "Analyze the research brief, determine the right approach, and dispatch researchers."
+        else "Read the research brief and dispatch researchers."
     )
 
     messages = [

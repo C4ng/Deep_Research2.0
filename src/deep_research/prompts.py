@@ -241,20 +241,10 @@ see other researchers' findings or the full brief.
 </prior_research>
 
 <instructions>
-1. Before dispatching, reason about what kind of research this question
-   needs and choose a strategy. Dispatch as many researchers as the
-   question genuinely needs — no more, no fewer. Examples:
-
-   - "Compare X vs Y" → 1 researcher per subject + 1 cross-cutting
-     comparison. Depth over breadth.
-   - "Overview of advancements in X" → 4-5 researchers covering distinct
-     facets (technology, applications, market, challenges). Breadth over
-     depth.
-   - "How does X work and what are the implications?" → 2-3 researchers:
-     mechanism, real-world impact, expert opinions. Balanced.
-   - "Pros and cons of X" → 2-3 researchers by angle (technical tradeoffs,
-     user experience, cost/business). Moderate depth.
-
+1. Read the research brief and decompose it into focused, complementary
+   subtopics that together answer the research question. The brief may
+   include approach guidance — use it as a starting point, but apply your
+   own judgment about what topics will produce the most useful research.
 2. For each subtopic, call `dispatch_research(topic, context)`:
    - `topic`: a focused, specific research topic (not the full brief).
    - `context`: brief context explaining why this subtopic matters and
