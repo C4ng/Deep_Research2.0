@@ -2,7 +2,7 @@
 
 AgentState: top-level state for the main graph.
 ResearcherState: isolated state for the researcher subgraph.
-Increment 3 adds SupervisorState.
+SupervisorState: state for the supervisor subgraph.
 """
 
 import operator
@@ -10,6 +10,8 @@ from typing import Annotated
 
 from langgraph.graph import add_messages
 from typing_extensions import TypedDict
+
+from deep_research.models import ResearchResult
 
 
 class AgentState(TypedDict):
@@ -57,5 +59,35 @@ class ResearcherState(TypedDict):
     current_gaps: list[str]
     """Current gaps remaining — overwritten each round (latest assessment)."""
 
+    final_knowledge_state: str
+    """Final knowledge assessment set by reflect when routing to summarizer."""
+
     notes: str
     """Summarizer output — compressed research notes."""
+
+
+class SupervisorState(TypedDict):
+    """State for the supervisor subgraph.
+
+    The supervisor decomposes a research brief into subtopics, dispatches
+    researchers, collects results, reflects on cross-topic completeness,
+    and decides whether follow-up research is needed.
+    """
+
+    messages: Annotated[list, add_messages]
+    """Tool-calling messages (supervisor LLM + conduct_research tool results)."""
+
+    research_brief: str
+    """The full research brief from write_brief."""
+
+    research_results: Annotated[list[ResearchResult], operator.add]
+    """Results from all dispatched researchers (append reducer)."""
+
+    last_supervisor_reflection: str
+    """Formatted reflection guidance for the next supervisor round (overwrite)."""
+
+    supervisor_iterations: int
+    """Number of supervisor reflection cycles completed."""
+
+    notes: str
+    """Combined notes from all researchers for the final report."""

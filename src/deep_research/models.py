@@ -60,3 +60,55 @@ class ResearchReflection(BaseModel):
         default_factory=list,
         description="Targeted queries for the next research round",
     )
+
+
+class ResearchResult(BaseModel):
+    """Result from a single researcher, built from accumulated state fields.
+
+    Returned by the conduct_research tool. Carries structured metadata
+    so the supervisor can assess cross-topic completeness without re-reading
+    full notes.
+    """
+
+    topic: str = Field(description="The research topic that was investigated")
+    notes: str = Field(description="Compressed research notes for the final report")
+    key_findings: list[str] = Field(
+        description="Key findings accumulated across all reflection rounds"
+    )
+    knowledge_state: Literal["insufficient", "partial", "sufficient"] = Field(
+        description="Final knowledge completeness assessment from the researcher"
+    )
+    missing_info: list[str] = Field(
+        default_factory=list,
+        description="Gaps remaining after the researcher finished"
+    )
+    contradictions: list[str] = Field(
+        default_factory=list,
+        description="Contradictions discovered during research"
+    )
+
+
+class SupervisorReflection(BaseModel):
+    """Structured reflection by the supervisor after collecting research results.
+
+    Assesses cross-topic completeness. The supervisor LLM decides what
+    follow-up research to conduct based on gaps and contradictions.
+    """
+
+    overall_assessment: str = Field(
+        description="Brief assessment of how well the research covers the brief"
+    )
+    cross_topic_contradictions: list[str] = Field(
+        default_factory=list,
+        description="Contradictions found between different researchers' findings"
+    )
+    coverage_gaps: list[str] = Field(
+        default_factory=list,
+        description="Important aspects of the brief not covered by any researcher"
+    )
+    should_continue: bool = Field(
+        description="Whether follow-up research is needed"
+    )
+    knowledge_state: Literal["insufficient", "partial", "sufficient"] = Field(
+        description="Overall completeness across all topics"
+    )

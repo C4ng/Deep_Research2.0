@@ -11,14 +11,21 @@ setup_logging()
 # if the number of internal helpers grows. For now, direct imports suffice.
 from deep_research.configuration import Configuration
 from deep_research.graph.graph import build_graph, deep_researcher
-from deep_research.models import ResearchReflection
-from deep_research.state import AgentState, ResearcherState
+from deep_research.models import (
+    ResearchReflection,
+    ResearchResult,
+    SupervisorReflection,
+)
+from deep_research.state import AgentState, ResearcherState, SupervisorState
 
 __all__ = [
     "AgentState",
     "Configuration",
     "ResearchReflection",
+    "ResearchResult",
     "ResearcherState",
+    "SupervisorReflection",
+    "SupervisorState",
     "build_graph",
     "deep_researcher",
 ]

@@ -163,7 +163,11 @@ async def reflect(
         logger.info("Routing to summarize")
         return Command(
             goto="summarize",
-            update={**accumulation_update, "last_reflection": ""},
+            update={
+                **accumulation_update,
+                "last_reflection": "",
+                "final_knowledge_state": reflection.knowledge_state,
+            },
         )
 
     all_findings = list(state.get("accumulated_findings", [])) + reflection.key_findings

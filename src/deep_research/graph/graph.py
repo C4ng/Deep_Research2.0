@@ -28,6 +28,7 @@ async def _run_researcher(state: AgentState, config: RunnableConfig) -> dict:
         "accumulated_findings": [],
         "accumulated_contradictions": [],
         "current_gaps": [],
+        "final_knowledge_state": "",
         "notes": "",
     }
     result = await researcher_subgraph.ainvoke(researcher_input, config)
