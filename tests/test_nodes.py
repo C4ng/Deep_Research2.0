@@ -186,6 +186,67 @@ def test_format_reflection_with_accumulated_no_new():
     assert "Still missing X" in result
 
 
+# --- Contradiction dedup tests (no API calls) ---
+
+
+@pytest.mark.asyncio
+async def test_contradiction_dedup_exact(researcher_state):
+    """Exact duplicate contradiction is not re-appended."""
+    researcher_state["accumulated_contradictions"] = ["Source A says X, Source B says Y"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["finding"],
+        missing_info=[],
+        contradictions=["Source A says X, Source B says Y"],  # same as existing
+        knowledge_state="sufficient",
+        should_continue=False,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    # Deduped: empty list sent to append reducer
+    assert result.update["accumulated_contradictions"] == []
+
+
+@pytest.mark.asyncio
+async def test_contradiction_dedup_case_insensitive(researcher_state):
+    """Case-insensitive duplicate is deduped."""
+    researcher_state["accumulated_contradictions"] = ["Market size conflicts between sources"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["finding"],
+        missing_info=[],
+        contradictions=["market size conflicts between sources"],  # different case
+        knowledge_state="sufficient",
+        should_continue=False,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    assert result.update["accumulated_contradictions"] == []
+
+
+@pytest.mark.asyncio
+async def test_contradiction_dedup_preserves_new(researcher_state):
+    """New contradictions are appended; only duplicates are filtered."""
+    researcher_state["accumulated_contradictions"] = ["Old contradiction"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["finding"],
+        missing_info=[],
+        contradictions=["Old contradiction", "Brand new contradiction"],
+        knowledge_state="sufficient",
+        should_continue=False,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    assert result.update["accumulated_contradictions"] == ["Brand new contradiction"]
+
+
 # --- Dead-end detection tests (no API calls) ---
 
 

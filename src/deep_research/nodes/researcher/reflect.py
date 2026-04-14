@@ -148,10 +148,19 @@ async def reflect(
         reflection.prior_gaps_filled,
     )
 
+    # Deduplicate contradictions before accumulating (append reducer causes dupes)
+    existing_contradictions = {
+        c.lower().strip() for c in state.get("accumulated_contradictions", [])
+    }
+    new_contradictions = [
+        c for c in reflection.contradictions
+        if c.lower().strip() not in existing_contradictions
+    ]
+
     # Accumulate structured knowledge (append reducers handle merging)
     accumulation_update = {
         "accumulated_findings": reflection.key_findings,
-        "accumulated_contradictions": reflection.contradictions,
+        "accumulated_contradictions": new_contradictions,
         "current_gaps": reflection.missing_info,
         "research_iterations": iteration,
     }
