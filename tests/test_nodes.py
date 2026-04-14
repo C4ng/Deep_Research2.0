@@ -18,7 +18,6 @@ from deep_research.nodes.report import final_report_generation
 from deep_research.models import CoordinatorReflection
 from deep_research.nodes.coordinator.reflect import _merge_notes, _format_reflection_guidance
 from deep_research.nodes.coordinator.coordinator import _format_research_results
-from deep_research.graph.graph import human_review, route_by_complexity
 from deep_research.tools.registry import get_all_tools
 
 
@@ -393,27 +392,6 @@ def test_format_reflection_guidance_no_gaps_or_contradictions():
     assert "contradictions" not in guidance
 
 
-# --- Route by complexity ---
-
-
-def test_route_by_complexity_simple():
-    """Simple questions route to single researcher."""
-    state = {"is_simple": True}
-    assert route_by_complexity(state) == "researcher"
-
-
-def test_route_by_complexity_complex():
-    """Complex questions route to coordinator."""
-    state = {"is_simple": False}
-    assert route_by_complexity(state) == "coordinator"
-
-
-def test_route_by_complexity_default():
-    """Missing is_simple defaults to coordinator."""
-    state = {}
-    assert route_by_complexity(state) == "coordinator"
-
-
 # --- Schema validation ---
 
 
@@ -532,58 +510,3 @@ async def test_clarify_no_clarification_routes_to_write_brief(sample_state):
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
     assert "coral reef bleaching" in messages[0].content
-
-
-# --- Human review node tests (mocked interrupt + LLM) ---
-
-
-@pytest.mark.asyncio
-async def test_human_review_disabled_skips():
-    """When allow_human_review=False, returns empty (no interrupt)."""
-    state = {"research_brief": "Title: Test\n\nSome question\n\nApproach: Survey"}
-    config = {"configurable": {"allow_human_review": False}}
-    result = await human_review(state, config)
-    assert result == {}
-
-
-@pytest.mark.asyncio
-async def test_human_review_approved_no_change():
-    """When user approves (empty feedback), returns empty — brief unchanged."""
-    state = {"research_brief": "Title: Test\n\nSome question\n\nApproach: Survey"}
-
-    with patch("deep_research.graph.graph.interrupt", return_value=""):
-        result = await human_review(state, config={"configurable": {}})
-
-    assert result == {}
-
-
-@pytest.mark.asyncio
-async def test_human_review_with_feedback_revises_brief():
-    """When user gives feedback, LLM revises the brief."""
-    original_brief = "Title: Test\n\nSome question\n\nApproach: Survey"
-    state = {"research_brief": original_brief}
-    revised = "Title: Test Revised\n\nRevised question\n\nApproach: Deep analysis"
-
-    mock_response = AsyncMock()
-    mock_response.content = revised
-
-    mock_chain = AsyncMock()
-    mock_chain.ainvoke = AsyncMock(return_value=mock_response)
-
-    with patch("deep_research.graph.graph.interrupt", return_value="Focus more on deep analysis"):
-        with patch("deep_research.graph.graph.configurable_model") as mock_model:
-            mock_model.with_retry.return_value.with_config.return_value = mock_chain
-            result = await human_review(state, config={"configurable": {}})
-
-    assert result["research_brief"] == revised
-
-
-@pytest.mark.asyncio
-async def test_human_review_none_feedback_treated_as_approval():
-    """When interrupt returns None, treated as approval."""
-    state = {"research_brief": "Title: Test\n\nSome question\n\nApproach: Survey"}
-
-    with patch("deep_research.graph.graph.interrupt", return_value=None):
-        result = await human_review(state, config={"configurable": {}})
-
-    assert result == {}
