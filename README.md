@@ -31,8 +31,8 @@ Built iteratively with [Claude Code](https://claude.ai/claude-code) across 10 in
 ### Installation
 
 ```bash
-git clone <repo-url>
-cd deep-research
+git clone https://github.com/C4ng/Deep_Research2.0.git
+cd Deep_Research2.0
 pip install -e .
 
 # For additional LLM providers
