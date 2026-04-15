@@ -401,7 +401,7 @@ Key observations:
 
 ---
 
-### Step 1 — Serper search provider
+### Step 1 — Serper search provider ✅
 
 **Files**: `src/deep_research/tools/search/serper.py` (new),
 `src/deep_research/tools/registry.py`, `src/deep_research/configuration.py`
@@ -510,9 +510,48 @@ if configurable.search_api == SearchAPI.SERPER:
   snippets directly (no summarization), has `[source_id]` tags
 
 **End-to-end**: Run same quantum computing query with `search_api: "serper"`,
-compare report quality with Brave/Tavily traces in LangSmith. Key question:
-is snippet-only content sufficient for good reports, or do we see quality
-degradation without summarization?
+compare report quality with Brave/Tavily traces in LangSmith.
+
+**Commit**: `0364f44` (implementation), bug fix in follow-up commit
+
+**Bug found and fixed**: snippet-only providers broke citation resolution.
+
+When `raw_content=None`, `BaseSearchTool._summarize_one()` skipped both
+summarization AND `write_source()`. Source IDs were generated and appeared
+in formatted results → notes, but the source store was empty → 
+`resolve_citations` couldn't map hex IDs to sequential numbers → report
+had 0 citations and no Sources section.
+
+**Fix** (`base.py`): call `write_source()` even when `raw_content=None` —
+we still have URL and title, which is all citation resolution needs.
+
+**End-to-end comparison** (quantum computing query, all three providers):
+
+| Metric | Tavily | Brave | Serper |
+|--------|--------|-------|--------|
+| Sources in store | ~50-70 | 60 | 157 |
+| Source IDs in notes | ~30-50 | 40 | 72 |
+| Citations in report | ~100-170 | 165 | 200 |
+| Report length | ~25-35k | 33,925 | 46,275 |
+| [unverified] marks | 0-3 | 0 | 0 |
+| Researchers hit max_iterations | ~0-1/5 | 0/5 | 5/6 |
+| Has ## Sources | Yes | Yes | Yes |
+
+Key observations:
+- **Serper has more sources (157)** — no summarization LLM call means faster
+  round-trips, so researchers do more searches within the same iteration budget.
+- **More researchers hit max_iterations (5/6)** — snippets have less depth per
+  result, so reflection keeps finding gaps and requesting more rounds. Brave and
+  Tavily provide richer per-result content, so researchers reach "sufficient"
+  earlier.
+- **Report quality is comparable** — despite snippet-only input, the report is
+  well-structured with citations. The researcher compensates by doing more
+  searches (breadth over depth).
+- **Cross-round dedup working** — "Source X already in store, skipping
+  summarization" messages appeared frequently, confirming snippet-only sources
+  are properly stored and deduplicated.
+- **Citation system fully functional** — 200 citations resolved, Sources section
+  present, 0 unverified marks.
 
 ---
 

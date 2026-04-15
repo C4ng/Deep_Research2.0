@@ -116,6 +116,12 @@ class BaseSearchTool(ABC):
                 return source_id, existing["content"]
 
             if not result.raw_content:
+                # No raw content to summarize (snippet-only provider).
+                # Still write to source store so citation resolution works.
+                write_source(
+                    sources_dir, source_id, result.url, result.title,
+                    result.content, "",
+                )
                 return source_id, None
 
             try:
