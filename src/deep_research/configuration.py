@@ -16,6 +16,7 @@ class SearchAPI(Enum):
 
     TAVILY = "tavily"
     BRAVE = "brave"
+    SERPER = "serper"
 
 
 class Configuration(BaseModel):
@@ -135,6 +136,10 @@ class Configuration(BaseModel):
     brave_api_key: str = Field(
         default="",
         description="Brave Search API key (loaded from BRAVE_API_KEY env var)",
+    )
+    serper_api_key: str = Field(
+        default="",
+        description="Serper API key (loaded from SERPER_API_KEY env var)",
     )
 
     @classmethod

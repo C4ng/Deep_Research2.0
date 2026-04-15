@@ -27,10 +27,9 @@ Three deliverables, scoped to what adds real value:
   consumes results internally. Would require a fundamentally different
   abstraction (response post-processor), not a `BaseSearchTool` subclass.
   See "Research: Search Provider Selection" above for full analysis.
-- **Serper (Google Search API)** — snippet-only (single Google excerpt per
-  result), no standalone Python client (only `langchain-community` wrappers).
-  Brave is strictly better: more content via `extra_snippets`, independent
-  client library.
+- ~~**Serper (Google Search API)**~~ — originally scoped out as snippet-only,
+  but added in Step 1 to further prove `BaseSearchTool` abstraction with a
+  minimal provider (snippet-only, no raw_content).
 - **Two-tier notes (raw + compressed)** — no use case. LangSmith traces already
   show full messages for debugging. Storing raw notes separately adds state
   bloat with no consumer.
@@ -190,7 +189,7 @@ brave_api_key: str = Field(default="", ...)
 
 ## Implementation Steps
 
-### Step 0 — Brave search provider ✍️
+### Step 0 — Brave search provider ✅
 
 **Files**: `src/deep_research/tools/search/brave.py` (new),
 `src/deep_research/tools/registry.py`, `src/deep_research/configuration.py`,
@@ -360,14 +359,164 @@ async def get_search_tools(config: RunnableConfig | None = None) -> list:
 - `test_brave_search_no_extra_snippets` — result without `extra_snippets` →
   `raw_content=None`, `content` = description
 
-**Integration** (`tests/test_search_providers.py`, `@pytest.mark.integration`):
-- `test_brave_search_and_summarize` — real Brave API call → verify formatted
-  output has `[source_id]` tags, summaries are generated from concatenated
-  snippets
+**Integration** (`tests/test_brave_search.py`, `@pytest.mark.integration`):
+- `test_brave_search_returns_results` — real Brave API returns SearchResult list
+- `test_brave_search_has_extra_snippets` — at least some results have raw_content
+- `test_brave_search_deduplicates_by_url` — overlapping queries dedup by URL
+- `test_brave_search_and_summarize` — full pipeline with source IDs and summaries
+
+**Commit**: `4c7bb5a`
+
+**End-to-end observation** (full pipeline with "quantum computing in 2025"):
+
+Ran the same query used in prior Tavily integration tests, with
+`search_api: "brave"`. Pipeline completed successfully.
+
+| Metric | Brave | Tavily (typical) |
+|--------|-------|-----------------|
+| Sources in store | 60 | ~50-70 |
+| Source IDs in notes | 40 | ~30-50 |
+| Citations in report | 165 | ~100-170 |
+| Report length | 33,925 chars | ~25,000-35,000 |
+| [unverified] marks | 0 | 0-3 |
+| Researchers | 5, all reached "sufficient" | Similar |
+
+Key observations:
+- **extra_snippets concatenation works well** — summarization LLM produced
+  structured summaries from the concatenated excerpts (compression ratios
+  11-25%, similar to Tavily's full-page summarization).
+- **Cross-round dedup working** — "Source X already in store, skipping
+  summarization" messages appeared when researchers hit overlapping URLs.
+- **No `pyproject.toml` change needed** — `httpx` is already available via
+  `tavily-python` dependency. No new package added.
+- **Report quality comparable to Tavily** — well-structured with headings,
+  specific data points, source citations throughout. The snippet-based
+  content was sufficient for the summarization pipeline.
+- **0 [unverified] marks** — suggests Brave's snippet-based content is
+  focused enough that the LLM doesn't hallucinate source IDs as often.
+  (Or this particular query produced fewer hallucination-prone claims.)
+- **Dead-end detection fired** — one researcher had `prior_gaps_filled=0`
+  at round 2, reformulation guidance injected, then filled 13 gaps in the
+  next round. The mechanism works across search providers as expected.
 
 ---
 
-### Step 1 — Model API key routing
+### Step 1 — Serper search provider
+
+**Files**: `src/deep_research/tools/search/serper.py` (new),
+`src/deep_research/tools/registry.py`, `src/deep_research/configuration.py`
+
+**Why add Serper after Brave**: Further proves the `BaseSearchTool` abstraction
+with a minimal provider — snippet-only, no raw_content at all. This tests the
+fallback path (`raw_content=None` → skip summarization, use snippet directly)
+which Brave's extra_snippets mostly avoided.
+
+**Serper API details**:
+- **Endpoint**: `POST https://google.serper.dev/search`
+- **Auth**: `X-API-KEY` header
+- **Request**: JSON body `{"q": "query", "num": max_results}`
+- **Response**:
+  ```json
+  {
+    "organic": [
+      {
+        "title": "Page title",
+        "link": "https://example.com",
+        "snippet": "Google's excerpt from the page...",
+        "position": 1
+      }
+    ]
+  }
+  ```
+- **Content depth**: snippet only — no raw_content, no extra_snippets
+- **Free tier**: 2,500 queries (no credit card)
+
+#### 1a. Implement `SerperSearchTool(BaseSearchTool)` in `serper.py`
+
+Same pattern as Brave — only `search()`:
+
+```python
+class SerperSearchTool(BaseSearchTool):
+    def __init__(self, api_key: str, config: RunnableConfig | None = None):
+        super().__init__(config=config)
+        self._api_key = api_key
+
+    async def search(self, queries: list[str], *, max_results: int = 5) -> list[SearchResult]:
+        async with httpx.AsyncClient() as client:
+            tasks = [
+                client.post(
+                    "https://google.serper.dev/search",
+                    json={"q": query, "num": max_results},
+                    headers={
+                        "X-API-KEY": self._api_key,
+                        "Content-Type": "application/json",
+                    },
+                )
+                for query in queries
+            ]
+            responses = await asyncio.gather(*tasks)
+
+        seen_urls: dict[str, SearchResult] = {}
+        for response in responses:
+            response.raise_for_status()
+            data = response.json()
+            for result in data.get("organic", []):
+                url = result["link"]
+                if url in seen_urls:
+                    continue
+                seen_urls[url] = SearchResult(
+                    url=url,
+                    title=result.get("title", ""),
+                    content=result.get("snippet", ""),
+                    raw_content=None,  # Serper is snippet-only
+                )
+        return list(seen_urls.values())
+```
+
+Key difference from Brave: `raw_content` is always `None`. This means
+`search_and_summarize` will skip the summarization LLM call for every result
+and use the snippet directly — testing the fallback path in `base.py:118-119`.
+
+#### 1b. `@tool` wrapper + Configuration + Registry
+
+Same pattern as Brave:
+```python
+# configuration.py
+class SearchAPI(Enum):
+    TAVILY = "tavily"
+    BRAVE = "brave"
+    SERPER = "serper"
+
+serper_api_key: str = Field(
+    default="",
+    description="Serper API key (loaded from SERPER_API_KEY env var)",
+)
+
+# registry.py
+if configurable.search_api == SearchAPI.SERPER:
+    return [serper_search]
+```
+
+#### 1c. Tests
+
+**Unit** (`tests/test_serper_search.py`):
+- `test_serper_search_maps_results` — mock POST response → verify
+  `SearchResult` fields (`link` → `url`, `snippet` → `content`, `raw_content=None`)
+- `test_serper_search_dedup_urls` — overlapping queries deduplicated
+- `test_serper_raw_content_always_none` — all results have `raw_content=None`
+
+**Integration** (`tests/test_serper_search.py`, `@pytest.mark.integration`):
+- `test_serper_search_and_summarize` — real Serper API → verify output uses
+  snippets directly (no summarization), has `[source_id]` tags
+
+**End-to-end**: Run same quantum computing query with `search_api: "serper"`,
+compare report quality with Brave/Tavily traces in LangSmith. Key question:
+is snippet-only content sufficient for good reports, or do we see quality
+degradation without summarization?
+
+---
+
+### Step 2 — Model API key routing
 
 **Files**: `src/deep_research/configuration.py`, `src/deep_research/graph/model.py`
 
@@ -393,7 +542,7 @@ when users want to pass keys via config (e.g., LangGraph Platform deployment).
 
 ---
 
-### Step 2 — Progress streaming interface
+### Step 3 — Progress streaming interface
 
 **Files**: `src/deep_research/progress.py` (new),
 `src/deep_research/graph/graph.py`
@@ -429,7 +578,7 @@ when users want to pass keys via config (e.g., LangGraph Platform deployment).
 
 ---
 
-### Step 3 — Integration testing + polish
+### Step 4 — Integration testing + polish
 
 Run full end-to-end tests:
 
@@ -448,20 +597,21 @@ Run full end-to-end tests:
 
 | File | Change |
 |------|--------|
-| `pyproject.toml` | Add brave client dependency (optional or httpx) |
-| `src/deep_research/tools/search/brave.py` | BraveSearchTool implementation — `search()` with extra_snippets concatenation |
-| `src/deep_research/tools/registry.py` | Route search tools by SearchAPI enum (TAVILY / BRAVE) |
-| `src/deep_research/configuration.py` | Add `brave_api_key`, `SearchAPI.BRAVE` enum value |
+| `src/deep_research/tools/search/brave.py` | BraveSearchTool — `search()` with extra_snippets concatenation |
+| `src/deep_research/tools/search/serper.py` | SerperSearchTool — `search()` snippet-only, raw_content=None |
+| `src/deep_research/tools/registry.py` | Route search tools by SearchAPI enum (TAVILY / BRAVE / SERPER) |
+| `src/deep_research/configuration.py` | Add `brave_api_key`, `serper_api_key`, enum values, API key routing |
 | `src/deep_research/progress.py` | Progress event types + astream wrapper |
 | `src/deep_research/graph/graph.py` | Expose builder for langgraph.json |
 | `langgraph.json` | LangGraph Platform deployment config |
-| `tests/test_search_providers.py` | Brave search unit tests (mocked HTTP) + integration tests |
+| `tests/test_brave_search.py` | Brave unit tests (mocked HTTP) + integration tests |
+| `tests/test_serper_search.py` | Serper unit tests (mocked HTTP) + integration tests |
 | `tests/test_progress.py` | Progress streaming tests |
 
 ## Not incorporated (rationale in Research section and scoping above)
 
 - **Provider-native search** — conflicts with pipeline architecture (source store, citation tracking)
-- **Serper** — snippet-only, no standalone client, Brave is strictly better
+- **Serper** — added in Step 1 (was originally scoped out)
 - **Two-tier notes** — no consumer, LangSmith covers debugging
 - **Token-limit retry** — not observed as a problem, add reactively
 - **Full CLI** — progress interface covers the real user need
