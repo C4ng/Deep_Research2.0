@@ -14,6 +14,7 @@ from langgraph.types import Command
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import build_model_config, configurable_model
+from deep_research.helpers.errors import all_tools_failed
 from deep_research.models import ResearchReflection
 from deep_research.prompts import researcher_reflection_prompt
 from deep_research.state import ResearcherState
@@ -145,6 +146,22 @@ async def reflect(
     configurable = Configuration.from_runnable_config(config)
     iteration = state.get("research_iterations", 0) + 1
     logger.info("Reflection round %d — assessing research progress", iteration)
+
+    # Fail-fast: if every tool call in this round returned an error,
+    # skip the reflection LLM call and exit immediately.
+    if all_tools_failed(state.get("messages", [])):
+        logger.warning(
+            "All tool calls failed in round %d — skipping reflection, "
+            "routing to summarize", iteration,
+        )
+        return Command(
+            goto="summarize",
+            update={
+                "research_iterations": iteration,
+                "last_reflection": "",
+                "final_knowledge_state": "error",
+            },
+        )
 
     reflection = await _run_reflection(state, config)
 

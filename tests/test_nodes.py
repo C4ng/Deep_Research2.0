@@ -13,7 +13,11 @@ from deep_research.models import ClarifyOutput, ResearchBrief, ResearchReflectio
 from deep_research.nodes.brief import _format_brief, write_research_brief
 from deep_research.nodes.clarify import clarify_with_user
 from deep_research.nodes.researcher.summarizer import summarize_research
-from deep_research.nodes.researcher.reflect import _extract_tool_results, _format_reflection, reflect
+from deep_research.helpers.errors import all_tools_failed
+from deep_research.nodes.researcher.reflect import (
+    _extract_tool_results, _format_reflection, reflect,
+)
+from deep_research.nodes.coordinator.reflect import coordinator_reflect
 from deep_research.nodes.report import final_report_generation
 from deep_research.models import CoordinatorReflection
 from deep_research.nodes.coordinator.reflect import _merge_notes, _format_reflection_guidance
@@ -876,3 +880,92 @@ async def test_clarify_no_clarification_routes_to_write_brief(sample_state):
     assert len(messages) == 1
     assert isinstance(messages[0], AIMessage)
     assert "coral reef bleaching" in messages[0].content
+
+
+# --- Fail-fast: _all_tools_failed ---
+
+def test_all_tools_failed_detects_errors():
+    """Returns True when ALL ToolMessages in this round are errors."""
+    messages = [
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
+        ToolMessage(content="Error executing tool: quota exceeded", name="search", tool_call_id="1"),
+        ToolMessage(content="Error executing tool: quota exceeded", name="search", tool_call_id="2"),
+    ]
+    assert all_tools_failed(messages) is True
+
+
+def test_all_tools_failed_mixed_results():
+    """Returns False when some results are valid."""
+    messages = [
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
+        ToolMessage(content="Error executing tool: quota exceeded", name="search", tool_call_id="1"),
+        ToolMessage(content="Some valid search result", name="search", tool_call_id="2"),
+    ]
+    assert all_tools_failed(messages) is False
+
+
+def test_all_tools_failed_no_tool_messages():
+    """Returns False when there are no ToolMessages (model didn't call tools)."""
+    messages = [
+        AIMessage(content="I don't need to search for this."),
+    ]
+    assert all_tools_failed(messages) is False
+
+
+def test_all_tools_failed_only_checks_current_round():
+    """Only checks the current round, not prior rounds' errors."""
+    messages = [
+        # Round 1 — all errors
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
+        ToolMessage(content="Error executing tool: quota exceeded", name="search", tool_call_id="1"),
+        # Round 2 — valid result
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "2"}]),
+        ToolMessage(content="Valid search result", name="search", tool_call_id="2"),
+    ]
+    assert all_tools_failed(messages) is False
+
+
+# --- Fail-fast: reflect early exit ---
+
+@pytest.mark.asyncio
+async def test_reflect_skips_llm_on_all_tool_errors(researcher_state):
+    """When all tools fail, reflect routes to summarize without calling the LLM."""
+    researcher_state["messages"] = [
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
+        ToolMessage(content="Error executing tool: quota exceeded", name="search", tool_call_id="1"),
+        ToolMessage(content="Error executing tool: quota exceeded", name="search", tool_call_id="2"),
+    ]
+    researcher_state["research_iterations"] = 0
+
+    # No need to mock the LLM — it should never be called
+    with patch("deep_research.nodes.researcher.reflect._run_reflection") as mock_llm:
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    mock_llm.assert_not_called()
+    assert result.goto == "summarize"
+    assert result.update["final_knowledge_state"] == "error"
+
+
+# --- Fail-fast: coordinator_reflect early exit ---
+
+@pytest.mark.asyncio
+async def test_coordinator_reflect_exits_on_zero_results():
+    """When latest round produced zero results, coordinator exits without LLM."""
+    state = {
+        "messages": [],
+        "research_brief": "Test brief",
+        "research_results": [],
+        "last_coordinator_reflection": "",
+        "coordinator_iterations": 0,
+        "latest_round_result_count": 0,
+        "notes": "",
+        "report_metadata": "",
+    }
+
+    with patch("deep_research.nodes.coordinator.reflect.configurable_model") as mock_model:
+        result = await coordinator_reflect(state, config={"configurable": {}})
+
+    # LLM should never be called
+    mock_model.with_structured_output.assert_not_called()
+    assert result.goto == "__end__"
+    assert result.update["coordinator_iterations"] == 1

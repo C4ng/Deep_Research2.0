@@ -110,6 +110,9 @@ class CoordinatorState(TypedDict):
     coordinator_iterations: int
     """Number of coordinator reflection cycles completed."""
 
+    latest_round_result_count: int
+    """Number of successful researcher results from the most recent dispatch round."""
+
     notes: str
     """Combined notes from all researchers for the final report."""
 

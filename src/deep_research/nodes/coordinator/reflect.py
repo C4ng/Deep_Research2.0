@@ -101,8 +101,28 @@ async def coordinator_reflect(
     iteration = state.get("coordinator_iterations", 0) + 1
     logger.info("Coordinator reflection round %d", iteration)
 
-    # Build reflection prompt
     results = state.get("research_results", [])
+
+    # Fail-fast: if this round produced zero successful results,
+    # skip the reflection LLM call and exit with whatever we have.
+    latest_count = state.get("latest_round_result_count", -1)
+    if latest_count == 0:
+        logger.warning(
+            "All researchers failed in round %d — skipping coordinator "
+            "reflection, exiting with %d prior results", iteration, len(results),
+        )
+        combined_notes = _merge_notes(results)
+        return Command(
+            goto="__end__",
+            update={
+                "notes": combined_notes,
+                "report_metadata": "",
+                "coordinator_iterations": iteration,
+                "last_coordinator_reflection": "",
+            },
+        )
+
+    # Build reflection prompt
     formatted_results = _format_research_results(results)
 
     model_config = build_model_config(

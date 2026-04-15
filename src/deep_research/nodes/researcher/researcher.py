@@ -14,6 +14,7 @@ from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import build_model_config, configurable_model
+from deep_research.helpers.errors import TOOL_ERROR_PREFIX
 from deep_research.prompts import researcher_prompt
 from deep_research.state import ResearcherState
 from deep_research.tools.registry import get_all_tools
@@ -27,7 +28,7 @@ async def _execute_tool_safely(tool, args, config):
         return await tool.ainvoke(args, config)
     except Exception as e:
         logger.warning("Tool %s failed: %s", getattr(tool, "name", "unknown"), e)
-        return f"Error executing tool: {e}"
+        return f"{TOOL_ERROR_PREFIX} {e}"
 
 
 async def researcher(state: ResearcherState, config: RunnableConfig) -> dict:

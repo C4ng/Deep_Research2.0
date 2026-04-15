@@ -178,4 +178,8 @@ async def coordinator_tools(state: CoordinatorState, config: RunnableConfig) -> 
             )
 
     logger.info("Coordinator tools completed: %d results collected", len(new_results))
-    return {"messages": tool_messages, "research_results": new_results}
+    return {
+        "messages": tool_messages,
+        "research_results": new_results,
+        "latest_round_result_count": len(new_results),
+    }

@@ -85,7 +85,12 @@ async def write_research_brief(
             update={
                 "research_brief": brief_str,
                 "is_simple": brief.is_simple,
-                "messages": [AIMessage(content=brief_str)],
+                "messages": [AIMessage(content=(
+                    "Here's the research plan I've drafted. "
+                    "Let me know if you'd like to adjust the scope, "
+                    "angle, or focus — or proceed directly.\n\n"
+                    + brief_str
+                ))],
             },
         )
 
