@@ -1,7 +1,7 @@
 # Increment 7 — Research Quality + Report Polish
 
 **Goal**: Dead-end detection, contradiction dedup, hallucinated citation marking, and report structure fixes.
-**Status**: Planning
+**Status**: Steps 0–3 implemented, Step 4 observations complete, contradiction redesign in progress
 **Depends on**: Increment 6 (Final Report Redesign) — report_metadata, citation resolution
 
 ## Overview
@@ -42,9 +42,9 @@ the LLM isn't handling them well enough.
 |----------|--------|-----------|
 | Dead-end detection | **LLM-assessed `prior_gaps_filled` field** | Programmatic string comparison is fragile (LLM rephrases gaps). The LLM already sees prior gaps in context — one integer field, clean routing. |
 | Dead-end routing | **Reformulate once, then force exit** | Round 2+: if `prior_gaps_filled == 0` and gaps exist, inject reformulation guidance. Round 3+: if still dead end, force exit. Two strikes = give up. |
-| Contradiction dedup | **Exact string dedup at accumulation** | Filter in reflect node before appending. Case-insensitive exact match — won't catch semantic duplicates but catches the common verbatim copy case. |
+| Contradiction dedup | **LLM-managed overwrite** | Integration testing showed exact string dedup insufficient — LLM rephrases across rounds. Changed to overwrite reducer: LLM outputs full canonical list each round, handling semantic dedup/merge/resolution naturally. |
 | Hallucinated citations | **`[unverified]` replacement** | Currently `resolve_citations` silently removes unknown IDs. Replace with `[unverified]` so the reader sees which claims lost their citation. |
-| Report structure | **Prompt refinement only** | Two targeted prompt changes for observed problems: visual hierarchy for contradictions + summary "Areas for Further Research" section. |
+| Report structure | **Prompt refinement only** | Two targeted prompt changes: `### Conflicting Evidence` with analysis guidance + `### Open Questions` within topic sections (not standalone at end). |
 
 ---
 
@@ -85,9 +85,10 @@ Example:
 
 ## Implementation Steps
 
-### Step 0 — Dead-end detection: model + routing
+### Step 0 — Dead-end detection: model + routing ✅
 
 **Files**: `src/deep_research/models.py`, `src/deep_research/prompts.py`, `src/deep_research/nodes/researcher/reflect.py`
+**Commit**: `74adb9e`
 
 **models.py** — Add `prior_gaps_filled` to `ResearchReflection`:
 
@@ -162,40 +163,58 @@ if dead_end and not should_stop:
 
 ---
 
-### Step 1 — Contradiction dedup in reflect node
+### Step 1 — Contradiction management: LLM-managed overwrite 🔄
 
-**File**: `src/deep_research/nodes/researcher/reflect.py`
+**Files**: `src/deep_research/state.py`, `src/deep_research/nodes/researcher/reflect.py`, `src/deep_research/prompts.py`
 
-Before appending to `accumulated_contradictions`, filter out duplicates:
+**Evolution**: Originally implemented as programmatic exact-string dedup with
+append reducer (`e8e2203`). Integration testing revealed near-duplicate
+contradictions survive string matching because the LLM rephrases slightly
+across rounds. Redesigned to use LLM semantic reasoning with overwrite
+semantics — the LLM outputs the full canonical contradiction list each round,
+merging/deduplicating/resolving as it sees fit.
 
+**state.py** — Changed `accumulated_contradictions` from append reducer to overwrite:
 ```python
-# Deduplicate contradictions before accumulating
-existing = {c.lower().strip() for c in state.get("accumulated_contradictions", [])}
-new_contradictions = [
-    c for c in reflection.contradictions
-    if c.lower().strip() not in existing
-]
+# Before: Annotated[list[str], operator.add]  (append)
+# After:  list[str]                            (overwrite)
+accumulated_contradictions: list[str]
+```
 
+**reflect.py** — Removed programmatic dedup, pass LLM output directly:
+```python
 accumulation_update = {
     "accumulated_findings": reflection.key_findings,
-    "accumulated_contradictions": new_contradictions,  # deduped
+    "accumulated_contradictions": reflection.contradictions,  # LLM manages the full list
     "current_gaps": reflection.missing_info,
     "research_iterations": iteration,
 }
 ```
 
+**prompts.py** — Updated `contradictions` field criteria to instruct full-list output:
+```
+contradictions:
+- Output the COMPLETE current list of all known contradictions — not just
+  new ones from this round. This field overwrites the previous round's list.
+- Merge, deduplicate, or remove contradictions that have been resolved by
+  new evidence.
+```
+
+The LLM already sees prior contradictions via `_format_accumulated_context()`
+("Previously identified contradictions:"), so it has full context to produce
+an updated canonical list.
+
 **Tests** (unit):
-- `test_contradiction_dedup_exact` — same string in state and reflection →
-  not re-appended
-- `test_contradiction_dedup_case_insensitive` — "Market size conflicts" vs
-  "market size conflicts" → deduped
-- `test_contradiction_dedup_preserves_new` — new contradictions still appended
+- `test_contradictions_overwrite_replaces_previous` — LLM consolidates prior entries
+- `test_contradictions_overwrite_can_clear` — LLM resolves all → empty list
+- `test_contradictions_overwrite_passes_through` — new contradictions pass through unfiltered
 
 ---
 
-### Step 2 — `[unverified]` for hallucinated citations
+### Step 2 — `[unverified]` for hallucinated citations ✅
 
 **File**: `src/deep_research/helpers/source_store.py`
+**Commit**: `12d63ec`
 
 Change `resolve_citations` behavior for unknown IDs:
 
@@ -221,51 +240,63 @@ ALL IDs in the bracket are unknown.
 
 ---
 
-### Step 3 — Report prompt: visual hierarchy + summary section
+### Step 3 — Report prompt: visual hierarchy + contextual open questions ✅
 
 **File**: `src/deep_research/prompts.py`
+**Commit**: `c71a5b4`
 
 Two targeted changes to `final_report_prompt`, both addressing Increment 6
 observations:
 
-**3a. Visual hierarchy for contradictions** — replace instruction 4:
+**3a. Visual hierarchy for contradictions** — replaced instruction 4 with
+structured analysis guidance: `### Conflicting Evidence` subsections within
+topic sections, with analysis of why sources differ (methodology, timeframe,
+scope) and guidance on which claim has stronger support.
 
-```
-4. When research_metadata lists contradictions, present them with clear
-   visual distinction — use a subheading (### Conflicting Evidence) and
-   present each side with its source. Do not bury contradictions in
-   running text.
-```
-
-**3b. Summary "Areas for Further Research"** — add instruction:
-
-```
-8. At the end of the main body, include a brief "Areas for Further
-   Research" section summarizing all gaps and open questions in one
-   place, even if they were mentioned inline. This gives the reader a
-   quick reference for follow-up.
-```
-
-**Tests**: Integration only — observe report output for visual distinction
-and summary section.
+**3b. Contextual open questions** — replaced standalone "Areas for Further
+Research" at the end (user rejected) with `### Open Questions` subsections
+within each relevant topic section. The metadata labels (not investigated,
+searched but not found, partial coverage) are used to explain what remains
+unknown and why. This keeps future directions near the corresponding context
+rather than buried at the bottom.
 
 ---
 
-### Step 4 — Integration testing + observation
+### Step 4 — Integration testing + observation ✅
 
-Run the full integration suite and a complex manual query to observe:
+Ran full end-to-end test with complex query (intermittent fasting health effects).
+170 sources cited.
 
-1. **Dead-end detection**: Does reformulation trigger? Does forced exit work?
-   - Look for "Dead end detected" and "Dead end persists" in logs
-   - Check if the researcher tries different angles after reformulation
-2. **Contradiction dedup**: Are duplicate contradictions gone from metadata?
-3. **`[unverified]`**: Do hallucinated citations get flagged visibly?
-4. **Report structure**: Are contradictions presented with clear hierarchy?
-   Does the report have a summary "Areas for Further Research"?
+**Dead-end detection — effective**:
+- `prior_gaps_filled` values ranged 0–3 across rounds, showing the LLM assesses
+  gap filling correctly.
+- Every time reformulation guidance was injected ("DEAD END: ..."), the researcher
+  filled at least some previously-stuck gaps in the next round (prior_gaps_filled=1–3).
+- No "dead end persists after reformulation" events — reformulation worked every
+  time. The "force exit after 2 strikes" path was never triggered; max_iterations (3)
+  catches those cases first. This is fine — the reformulation guidance is pulling its weight.
 
-Document observations. If the LLM isn't handling contradiction resolution,
-source authority, or corroboration well enough, add targeted prompt fixes
-as a follow-up step.
+**[unverified] markers — working as designed**:
+- 3 `[unverified]` markers in the final report, 17 hallucinated citations caught total.
+- Most hallucinated IDs appeared alongside known IDs in mixed brackets — the known
+  ones were kept, only unknowns dropped. `[unverified]` only appears when ALL citations
+  in a bracket were hallucinated, flagging the riskiest claims for the reader.
+
+**Contradiction quality in report — substantially improved**:
+- Dedicated `### Conflicting Evidence` subsections with structured analysis (why sources
+  differ — methodology, study design, timeframe) and guidance on which claim has stronger
+  support. Example: calorie reduction vs. eating window debate includes the ChronoFast
+  trial (2025) as key evidence and explains isocaloric vs ad libitum study differences.
+
+**Open Questions sections — well-placed**:
+- 4 `### Open Questions` subsections within relevant topic sections. The LLM correctly
+  translated metadata labels (e.g., "searched but not found") into reader-facing
+  explanations of what remains unknown and why.
+
+**Contradiction dedup in metadata — limitation identified**:
+- Exact string dedup catches verbatim copies but near-duplicates survive (LLM
+  rephrases the same contradiction slightly across rounds). Led to the contradiction
+  management redesign (Step 1 → overwrite semantics).
 
 ---
 
@@ -274,34 +305,25 @@ as a follow-up step.
 | File | Change |
 |------|--------|
 | `src/deep_research/models.py` | Add `prior_gaps_filled: int` to `ResearchReflection` |
-| `src/deep_research/nodes/researcher/reflect.py` | Dead-end detection routing + contradiction dedup |
+| `src/deep_research/state.py` | `accumulated_contradictions` from append reducer to overwrite |
+| `src/deep_research/nodes/researcher/reflect.py` | Dead-end detection routing + contradiction overwrite (removed programmatic dedup) |
 | `src/deep_research/helpers/source_store.py` | `[unverified]` for unknown citations |
-| `src/deep_research/prompts.py` | `prior_gaps_filled` field criteria + report visual hierarchy + summary section |
-| `tests/test_reflect.py` (new) | Dead-end detection + contradiction dedup unit tests |
+| `src/deep_research/prompts.py` | `prior_gaps_filled` field criteria, contradiction overwrite instruction, report visual hierarchy + open questions |
+| `tests/test_nodes.py` | Dead-end detection + contradiction overwrite unit tests |
 | `tests/test_source_store.py` | Update/add `[unverified]` tests |
 
-## Files NOT Changed
+## Deferred (add only if future testing shows need)
 
-| File | Why not |
-|------|---------|
-| `state.py` | No new state fields — `prior_gaps_filled` is on ResearchReflection (model output), not state |
-| `configuration.py` | No new config — dead-end thresholds use iteration count already tracked |
-| `coordinator/reflect.py` | No changes — LLM already handles cross-topic assessment adequately |
-| `tools/search/base.py` | No authority tag — LLM already sees URLs |
-| `nodes/report.py` | No code changes — prompt changes handle report improvements |
-| `nodes/researcher/adapter.py` | Unchanged — contradiction dedup happens upstream in reflect |
-| `nodes/researcher/researcher.py` | No changes — LLM already acts on reflection guidance |
+Integration testing showed the LLM handles these adequately without explicit prompting:
 
-## Deferred (add only if integration testing shows need)
-
-- **Prompt: contradiction resolution in next_queries** — if LLM doesn't
-  naturally include resolution queries when contradictions exist
-- **Prompt: multi-source corroboration** — if LLM doesn't note when multiple
-  sources agree
-- **Prompt: source authority** — if LLM ignores .gov/.edu credibility in
-  contradiction evaluation
-- **Prompt: coordinator low-confidence** — if coordinator doesn't handle
-  insufficient researchers well
-- **URL authority tag in `_format_results`** — if prompt-only isn't enough
-- **Semantic contradiction dedup** — if exact match doesn't catch enough dupes
+- ~~**Semantic contradiction dedup**~~ — resolved by switching to LLM-managed overwrite
+- **Prompt: contradiction resolution in next_queries** — LLM naturally includes
+  resolution queries when it sees contradictions in context
+- **Prompt: multi-source corroboration** — LLM notes agreement/disagreement
+  when it sees multiple sources on the same topic
+- **Prompt: source authority** — LLM sees full URLs and correctly weights
+  .gov/.edu sources in contradiction analysis
+- **Prompt: coordinator low-confidence** — coordinator reasons about
+  knowledge_state adequately
+- **URL authority tag in `_format_results`** — not needed, LLM already sees URLs
 - **Coordinator topic reassignment** — dispatch same topic with different angle
