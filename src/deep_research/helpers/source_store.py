@@ -225,7 +225,7 @@ def resolve_citations(
             title = meta.get("title", "Untitled")
             url = meta.get("url", "")
             source_lines.append(f"[{n}] {title}: {url}")
-        resolved += "\n".join(source_lines) + "\n"
+        resolved += "\n\n".join(source_lines) + "\n"
 
     return resolved, warnings
 
