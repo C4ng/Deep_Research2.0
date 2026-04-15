@@ -154,23 +154,57 @@ async def _generate_events(thread_id: str, query: str | None = None, resume_mess
         # Stream graph execution
         yield _sse({"channel": "activity", "type": "status", "data": {"status": "running"}})
 
-        async for chunk in _graph.astream(input_state, config, stream_mode="updates"):
-            # Each chunk is {node_name: state_update}
-            for node_name, update in chunk.items():
-                # Map node updates to UI events
-                events = map_stream_event(node_name, update)
-                for event in events:
-                    if event.get("channel") == "chat" and event.get("type") == "ai_message":
-                        sent_contents.add(event["data"].get("content", ""))
-                    yield _sse(event)
+        # Run graph stream in a background task feeding a queue, so we can
+        # drain log/state events every 0.3s even during long-running nodes
+        # (e.g. coordinator_tools running 5 researchers for ~60s).
+        graph_queue: asyncio.Queue = asyncio.Queue()
 
-            # Drain any activity logs that accumulated
-            while not collector.events.empty():
-                try:
-                    log_event = collector.events.get_nowait()
-                    yield _sse(log_event)
-                except asyncio.QueueEmpty:
+        async def _run_stream():
+            try:
+                async for chunk in _graph.astream(input_state, config, stream_mode="updates"):
+                    await graph_queue.put(chunk)
+            except Exception as e:
+                await graph_queue.put(e)
+            finally:
+                await graph_queue.put(None)  # sentinel: stream done
+
+        stream_task = asyncio.create_task(_run_stream())
+
+        while True:
+            # Process all available graph chunks
+            while not graph_queue.empty():
+                item = graph_queue.get_nowait()
+                if item is None:
+                    break  # sentinel
+                if isinstance(item, Exception):
+                    logger.error("Graph stream error: %s", item)
                     break
+                for node_name, update in item.items():
+                    events = map_stream_event(node_name, update)
+                    for event in events:
+                        if event.get("channel") == "chat" and event.get("type") == "ai_message":
+                            sent_contents.add(event["data"].get("content", ""))
+                        yield _sse(event)
+            else:
+                # Drain activity/state logs that accumulated
+                while not collector.events.empty():
+                    try:
+                        log_event = collector.events.get_nowait()
+                        yield _sse(log_event)
+                    except asyncio.QueueEmpty:
+                        break
+                await asyncio.sleep(0.3)
+                continue
+            break  # inner while hit sentinel or error
+
+        # Final drain of remaining logs
+        while not collector.events.empty():
+            try:
+                yield _sse(collector.events.get_nowait())
+            except asyncio.QueueEmpty:
+                break
+
+        await stream_task
 
         # After graph completes, check final state for messages not yet sent
         final_state = await _graph.aget_state(config)

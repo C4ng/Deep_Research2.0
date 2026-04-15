@@ -75,7 +75,7 @@ Approach — how to investigate:
    research most useful to the user.
 8. This is strategic guidance, not an exact topic list. A downstream
    coordinator will decide the specific decomposition into research tasks.
-9. Use markdown bullet points (- item) for lists. Never use HTML tags.
+9. Each bullet point should be a concise, self-contained statement.
 
 Do NOT include subtopics — a downstream coordinator handles decomposition."""
 

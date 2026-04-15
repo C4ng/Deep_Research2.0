@@ -34,8 +34,8 @@ class ResearchBrief(BaseModel):
     research_question: str = Field(
         description="Detailed research question with all user constraints preserved"
     )
-    approach: str = Field(
-        description="Strategic guidance: what kind of question, angles to cover, breadth vs depth"
+    approach: list[str] = Field(
+        description="Strategic guidance as a list of bullet points: angles to cover, priorities, breadth vs depth"
     )
     ready_to_proceed: bool = Field(
         default=False,
