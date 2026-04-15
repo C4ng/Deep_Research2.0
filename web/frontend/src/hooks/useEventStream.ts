@@ -1,5 +1,16 @@
 import { useCallback, useRef, useState } from "react";
-import type { ActivityItem, ChatMessage, SSEEvent } from "../types";
+import type {
+  ActivityItem,
+  ChatMessage,
+  CoordinatorDispatchEvent,
+  CoordinatorReflectionEvent,
+  CoordinatorResultsEvent,
+  CoordinatorState,
+  ResearcherReflectionEvent,
+  ResearcherSearchEvent,
+  ResearcherState,
+  SSEEvent,
+} from "../types";
 
 let idCounter = 0;
 const nextId = () => String(++idCounter);
@@ -57,6 +68,17 @@ export function useEventStream() {
   const [threadId, setThreadId] = useState<string | null>(null);
   const eventSourceRef = useRef<EventSource | null>(null);
 
+  // State panel: accumulated researcher and coordinator state
+  const [researchers, setResearchers] = useState<Map<string, ResearcherState>>(
+    new Map()
+  );
+  const [coordinator, setCoordinator] = useState<CoordinatorState>({
+    round: 0,
+    dispatches: [],
+    results: [],
+    reflections: [],
+  });
+
   const addChat = useCallback((msg: ChatMessage) => {
     setChatMessages((prev) => [...prev, msg]);
   }, []);
@@ -65,8 +87,103 @@ export function useEventStream() {
     setActivityItems((prev) => [...prev, item]);
   }, []);
 
+  const handleStateEvent = useCallback((event: SSEEvent) => {
+    if (event.channel !== "state") return;
+    const d = event.data as Record<string, unknown>;
+
+    switch (event.type) {
+      case "researcher_search": {
+        const e = d as unknown as ResearcherSearchEvent;
+        setResearchers((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(e.topic) || {
+            topic: e.topic,
+            rounds: [],
+          };
+          // Find or create the current round entry
+          const lastRound = existing.rounds[existing.rounds.length - 1];
+          if (lastRound && lastRound.key_findings.length === 0) {
+            // Still in the same round (no reflection yet), append queries
+            lastRound.queries = [...lastRound.queries, ...e.queries];
+          } else {
+            // New round
+            existing.rounds.push({
+              round: existing.rounds.length + 1,
+              queries: e.queries,
+              knowledge_state: "",
+              key_findings: [],
+              missing_info: [],
+              contradictions: [],
+            });
+          }
+          next.set(e.topic, { ...existing });
+          return next;
+        });
+        break;
+      }
+
+      case "researcher_reflection": {
+        const e = d as unknown as ResearcherReflectionEvent;
+        setResearchers((prev) => {
+          const next = new Map(prev);
+          const existing = next.get(e.topic) || {
+            topic: e.topic,
+            rounds: [],
+          };
+          const lastRound = existing.rounds[existing.rounds.length - 1];
+          if (lastRound) {
+            lastRound.knowledge_state = e.knowledge_state;
+            lastRound.key_findings = e.key_findings;
+            lastRound.missing_info = e.missing_info;
+            lastRound.contradictions = e.contradictions;
+          }
+          if (!e.should_continue) {
+            existing.finalState = e.knowledge_state;
+          }
+          next.set(e.topic, { ...existing });
+          return next;
+        });
+        break;
+      }
+
+      case "coordinator_dispatch": {
+        const e = d as unknown as CoordinatorDispatchEvent;
+        setCoordinator((prev) => ({
+          ...prev,
+          round: prev.dispatches.length + 1,
+          dispatches: [...prev.dispatches, e],
+        }));
+        break;
+      }
+
+      case "coordinator_results": {
+        const e = d as unknown as CoordinatorResultsEvent;
+        setCoordinator((prev) => ({
+          ...prev,
+          results: [...prev.results, e],
+        }));
+        break;
+      }
+
+      case "coordinator_reflection": {
+        const e = d as unknown as CoordinatorReflectionEvent;
+        setCoordinator((prev) => ({
+          ...prev,
+          reflections: [...prev.reflections, e],
+        }));
+        break;
+      }
+    }
+  }, []);
+
   const handleEvent = useCallback(
     (event: SSEEvent) => {
+      // State channel
+      if (event.channel === "state") {
+        handleStateEvent(event);
+        return;
+      }
+
       if (event.channel === "chat") {
         if (event.type === "ai_message") {
           addChat({
@@ -108,7 +225,7 @@ export function useEventStream() {
         }
       }
     },
-    [addChat, addActivity]
+    [addChat, addActivity, handleStateEvent]
   );
 
   const connectStream = useCallback(
@@ -143,6 +260,8 @@ export function useEventStream() {
     async (query: string) => {
       setIsRunning(true);
       setNeedsInput(false);
+      setResearchers(new Map());
+      setCoordinator({ round: 0, dispatches: [], results: [], reflections: [] });
 
       // Add user message to chat
       addChat({ id: nextId(), role: "user", content: query });
@@ -187,5 +306,7 @@ export function useEventStream() {
     needsInput,
     startResearch,
     resumeResearch,
+    researchers,
+    coordinator,
   };
 }

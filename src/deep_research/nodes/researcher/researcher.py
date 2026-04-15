@@ -114,7 +114,19 @@ async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> di
     tools_by_name = {t.name: t for t in tools}
 
     tool_names = [tc["name"] for tc in most_recent.tool_calls if tc["name"] in tools_by_name]
-    logger.info("Executing %d tool calls in parallel: %s", len(tool_names), tool_names)
+    search_queries = [
+        tc["args"].get("query", tc["args"].get("search_query", ""))
+        for tc in most_recent.tool_calls
+        if tc["name"] in tools_by_name
+    ]
+    topic = state.get("research_topic", "")
+    logger.info(
+        "Executing %d tool calls in parallel: %s", len(tool_names), tool_names,
+        extra={"event_type": "researcher_search", "event_data": {
+            "topic": topic,
+            "queries": [q for q in search_queries if q],
+        }},
+    )
 
     tool_tasks = [
         _execute_tool_safely(tools_by_name[tc["name"]], tc["args"], config)

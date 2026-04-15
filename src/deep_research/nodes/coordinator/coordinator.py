@@ -111,7 +111,18 @@ async def coordinator(state: CoordinatorState, config: RunnableConfig) -> dict:
     logger.info("Coordinator invoking LLM (%d prior results)", len(state.get("research_results", [])))
     response = await model.ainvoke(messages)
     tool_count = len(response.tool_calls) if response.tool_calls else 0
-    logger.info("Coordinator LLM responded: %d tool calls", tool_count)
+    topics = []
+    if response.tool_calls:
+        for tc in response.tool_calls:
+            if tc["name"] == "dispatch_research":
+                topics.append(tc["args"].get("topic", ""))
+    logger.info(
+        "Coordinator LLM responded: %d tool calls", tool_count,
+        extra={"event_type": "coordinator_dispatch", "event_data": {
+            "topics": [t for t in topics if t],
+            "count": tool_count,
+        }},
+    )
 
     return {"messages": [response]}
 
@@ -177,7 +188,26 @@ async def coordinator_tools(state: CoordinatorState, config: RunnableConfig) -> 
                             name=tc["name"], tool_call_id=tc["id"])
             )
 
-    logger.info("Coordinator tools completed: %d results collected", len(new_results))
+    result_summaries = [
+        {
+            "topic": r.topic,
+            "knowledge_state": r.knowledge_state,
+            "findings_count": len(r.key_findings),
+            "gaps_count": len(r.missing_info),
+            "contradictions_count": len(r.contradictions),
+            "key_findings": r.key_findings,
+            "missing_info": r.missing_info,
+            "contradictions": r.contradictions,
+        }
+        for r in new_results
+    ]
+    logger.info(
+        "Coordinator tools completed: %d results collected", len(new_results),
+        extra={"event_type": "coordinator_results", "event_data": {
+            "results": result_summaries,
+            "count": len(new_results),
+        }},
+    )
     return {
         "messages": tool_messages,
         "research_results": new_results,

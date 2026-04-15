@@ -47,15 +47,24 @@ class ActivityCollector(logging.Handler):
         if not record.name.startswith("deep_research"):
             return
         try:
-            self.events.put_nowait({
-                "channel": "activity",
-                "type": "log",
-                "data": {
-                    "module": record.name.split(".")[-1],
-                    "message": record.getMessage(),
-                    "level": record.levelname.lower(),
-                },
-            })
+            # Structured state events carry event_type/event_data extras
+            event_type = getattr(record, "event_type", None)
+            if event_type:
+                self.events.put_nowait({
+                    "channel": "state",
+                    "type": event_type,
+                    "data": getattr(record, "event_data", {}),
+                })
+            else:
+                self.events.put_nowait({
+                    "channel": "activity",
+                    "type": "log",
+                    "data": {
+                        "module": record.name.split(".")[-1],
+                        "message": record.getMessage(),
+                        "level": record.levelname.lower(),
+                    },
+                })
         except asyncio.QueueFull:
             pass
 

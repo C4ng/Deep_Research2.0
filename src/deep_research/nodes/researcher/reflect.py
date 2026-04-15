@@ -167,6 +167,7 @@ async def reflect(
 
     reflection = await _run_reflection(state, config)
 
+    topic = state.get("research_topic", "")
     logger.info(
         "Reflection result: knowledge_state=%s, should_continue=%s, "
         "gaps=%d, contradictions=%d, prior_gaps_filled=%d",
@@ -175,6 +176,16 @@ async def reflect(
         len(reflection.missing_info),
         len(reflection.contradictions),
         reflection.prior_gaps_filled,
+        extra={"event_type": "researcher_reflection", "event_data": {
+            "topic": topic,
+            "round": iteration,
+            "knowledge_state": reflection.knowledge_state,
+            "key_findings": reflection.key_findings,
+            "missing_info": reflection.missing_info,
+            "contradictions": reflection.contradictions,
+            "should_continue": reflection.should_continue,
+            "next_queries": reflection.next_queries,
+        }},
     )
 
     # Accumulate structured knowledge

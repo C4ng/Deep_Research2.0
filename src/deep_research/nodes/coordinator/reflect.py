@@ -154,6 +154,14 @@ async def coordinator_reflect(
         reflection.should_continue,
         len(reflection.coverage_gaps),
         len(reflection.cross_topic_contradictions),
+        extra={"event_type": "coordinator_reflection", "event_data": {
+            "round": iteration,
+            "knowledge_state": reflection.knowledge_state,
+            "overall_assessment": reflection.overall_assessment,
+            "cross_topic_contradictions": reflection.cross_topic_contradictions,
+            "coverage_gaps": reflection.coverage_gaps,
+            "should_continue": reflection.should_continue,
+        }},
     )
 
     should_stop = (
