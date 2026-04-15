@@ -21,6 +21,12 @@ build/
 # Environment / secrets
 .env
 
+# LangGraph Studio
+.langgraph_api/
+
+# Node
+node_modules/
+
 # Reference materials (not part of the project)
 *_reference/
 DESIGN_REFERENCE.md

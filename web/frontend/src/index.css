@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, sans-serif;
+}
+
+/* Markdown content styling */
+.markdown-content h1 { @apply text-2xl font-bold mt-6 mb-3; }
+.markdown-content h2 { @apply text-xl font-semibold mt-5 mb-2; }
+.markdown-content h3 { @apply text-lg font-semibold mt-4 mb-2; }
+.markdown-content p { @apply mb-3 leading-relaxed; }
+.markdown-content ul { @apply list-disc pl-6 mb-3; }
+.markdown-content ol { @apply list-decimal pl-6 mb-3; }
+.markdown-content li { @apply mb-1; }
+.markdown-content code { @apply bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded text-sm; }
+.markdown-content pre { @apply bg-gray-100 dark:bg-gray-800 p-3 rounded-lg overflow-x-auto mb-3; }
+.markdown-content pre code { @apply bg-transparent p-0; }
+.markdown-content blockquote { @apply border-l-4 border-gray-300 pl-4 italic text-gray-600 dark:text-gray-400; }
+.markdown-content table { @apply w-full border-collapse mb-3; }
+.markdown-content th { @apply border border-gray-300 dark:border-gray-600 px-3 py-1.5 bg-gray-50 dark:bg-gray-800 text-left font-semibold; }
+.markdown-content td { @apply border border-gray-300 dark:border-gray-600 px-3 py-1.5; }
+.markdown-content a { @apply text-blue-600 dark:text-blue-400 underline; }
