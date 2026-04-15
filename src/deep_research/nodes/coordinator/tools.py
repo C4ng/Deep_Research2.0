@@ -13,6 +13,7 @@ from langchain_core.tools import InjectedToolArg, tool
 
 from deep_research.models import ResearchResult
 from deep_research.nodes.researcher import researcher_subgraph
+from deep_research.state import create_researcher_state
 
 logger = logging.getLogger(__name__)
 
@@ -31,17 +32,7 @@ async def dispatch_research(
     """
     logger.info("dispatch_research dispatching researcher for: %s", topic)
 
-    initial_state = {
-        "messages": [],
-        "research_topic": f"{topic}\n\nContext: {context}",
-        "research_iterations": 0,
-        "last_reflection": "",
-        "accumulated_findings": [],
-        "accumulated_contradictions": [],
-        "current_gaps": [],
-        "final_knowledge_state": "",
-        "notes": "",
-    }
+    initial_state = create_researcher_state(f"{topic}\n\nContext: {context}")
 
     result = await researcher_subgraph.ainvoke(initial_state, config)
 

@@ -10,7 +10,7 @@ import logging
 from langchain_core.runnables import RunnableConfig
 
 from deep_research.nodes.researcher import researcher_subgraph
-from deep_research.state import AgentState
+from deep_research.state import AgentState, create_researcher_state
 
 logger = logging.getLogger(__name__)
 
@@ -22,17 +22,7 @@ async def run_single_researcher(state: AgentState, config: RunnableConfig) -> di
     and maps the result back.
     """
     logger.info("Simple question — running single researcher (no coordinator)")
-    initial_state = {
-        "messages": [],
-        "research_topic": state["research_brief"],
-        "research_iterations": 0,
-        "last_reflection": "",
-        "accumulated_findings": [],
-        "accumulated_contradictions": [],
-        "current_gaps": [],
-        "final_knowledge_state": "",
-        "notes": "",
-    }
+    initial_state = create_researcher_state(state["research_brief"])
     result = await researcher_subgraph.ainvoke(initial_state, config)
 
     # Format metadata for the report node

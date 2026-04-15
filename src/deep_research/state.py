@@ -72,6 +72,21 @@ class ResearcherState(TypedDict):
     """Summarizer output — compressed research notes."""
 
 
+def create_researcher_state(topic: str) -> dict:
+    """Create initial state dict for a researcher subgraph invocation."""
+    return {
+        "messages": [],
+        "research_topic": topic,
+        "research_iterations": 0,
+        "last_reflection": "",
+        "accumulated_findings": [],
+        "accumulated_contradictions": [],
+        "current_gaps": [],
+        "final_knowledge_state": "",
+        "notes": "",
+    }
+
+
 class CoordinatorState(TypedDict):
     """State for the coordinator subgraph.
 

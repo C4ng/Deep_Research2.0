@@ -10,7 +10,7 @@ Flow: coordinator → coordinator_tools → coordinator_reflect → (coordinator
 On exit, merges all researcher notes with topic headers into `notes`.
 """
 
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import START, StateGraph
 
 from deep_research.nodes.coordinator.coordinator import coordinator, coordinator_tools
 from deep_research.nodes.coordinator.reflect import coordinator_reflect

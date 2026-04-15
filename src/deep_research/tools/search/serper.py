@@ -9,14 +9,10 @@ from langchain_core.tools import InjectedToolArg, tool
 
 from deep_research.configuration import Configuration
 from deep_research.models import SearchResult
+from deep_research.tools.search import SEARCH_DESCRIPTION
 from deep_research.tools.search.base import BaseSearchTool
 
 SERPER_API_URL = "https://google.serper.dev/search"
-
-SERPER_SEARCH_DESCRIPTION = (
-    "A search engine optimized for comprehensive, accurate, and trusted results. "
-    "Useful for when you need to answer questions about current events."
-)
 
 
 class SerperSearchTool(BaseSearchTool):
@@ -66,7 +62,7 @@ class SerperSearchTool(BaseSearchTool):
         return list(seen_urls.values())
 
 
-@tool(description=SERPER_SEARCH_DESCRIPTION)
+@tool(description=SEARCH_DESCRIPTION)
 async def serper_search(
     queries: List[str],
     max_results: Annotated[int, InjectedToolArg] = 5,
