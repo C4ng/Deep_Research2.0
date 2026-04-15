@@ -77,7 +77,10 @@ async def write_research_brief(
     brief_str = _format_brief(brief)
     logger.info("Brief generated: %s (ready=%s)", brief.title, brief.ready_to_proceed)
 
-    if configurable.allow_human_review and not brief.ready_to_proceed:
+    # First draft (no prior brief) must always be shown for review,
+    # regardless of what the LLM sets for ready_to_proceed.
+    is_first_draft = not prior_brief
+    if configurable.allow_human_review and (is_first_draft or not brief.ready_to_proceed):
         # Show to user for review (first draft or revision with changes)
         logger.info("Showing brief to user for review")
         return Command(

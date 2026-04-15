@@ -144,6 +144,10 @@ async def _generate_events(thread_id: str, query: str | None = None, resume_mess
         else:
             return
 
+        # Snapshot message count before this run so we only post-check new messages
+        snapshot = await _graph.aget_state(config)
+        prior_message_count = len(snapshot.values.get("messages", [])) if snapshot and snapshot.values else 0
+
         # Track AI message contents sent during streaming to avoid duplicates
         sent_contents: set[str] = set()
 
@@ -173,7 +177,7 @@ async def _generate_events(thread_id: str, query: str | None = None, resume_mess
         values = final_state.values if final_state else {}
 
         all_messages = values.get("messages", [])
-        for msg in all_messages:
+        for msg in all_messages[prior_message_count:]:
             if isinstance(msg, AIMessage) and msg.content and msg.content not in sent_contents:
                 yield _sse({
                     "channel": "chat",
