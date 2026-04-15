@@ -622,7 +622,7 @@ def test_research_brief_schema():
     brief = ResearchBrief(
         title="Quantum Computing 2025",
         research_question="What is the current state of quantum computing?",
-        approach="Broad survey covering technology, players, applications, challenges.",
+        approach=["Survey current technology landscape", "Identify key players", "Review applications and challenges"],
     )
     assert brief.title
     assert brief.research_question
@@ -637,12 +637,13 @@ def test_format_brief():
     brief = ResearchBrief(
         title="Test Title",
         research_question="What is X?",
-        approach="Survey approach.",
+        approach=["Survey approach"],
     )
     result = _format_brief(brief)
-    assert "Title: Test Title" in result
+    assert "Test Title" in result
     assert "What is X?" in result
-    assert "Approach: Survey approach." in result
+    assert "Approach" in result
+    assert "Survey approach" in result
 
 
 @pytest.mark.integration
@@ -660,7 +661,7 @@ async def test_brief_review_disabled_routes_to_coordinator():
     mock_brief = ResearchBrief(
         title="React Version",
         research_question="What is the latest React version?",
-        approach="Factual lookup.",
+        approach=["Factual lookup"],
     )
     mock_chain = AsyncMock()
     mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
@@ -686,7 +687,7 @@ async def test_brief_review_enabled_first_draft_exits():
     mock_brief = ResearchBrief(
         title="Quantum Computing",
         research_question="What is the state of quantum computing?",
-        approach="Broad survey.",
+        approach=["Broad survey"],
     )
     mock_chain = AsyncMock()
     mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
@@ -717,7 +718,7 @@ async def test_brief_revision_approved_proceeds():
     mock_brief = ResearchBrief(
         title="Quantum Computing",
         research_question="What is the state of quantum computing?",
-        approach="Broad survey.",
+        approach=["Broad survey"],
         ready_to_proceed=True,
     )
     mock_chain = AsyncMock()
@@ -748,7 +749,7 @@ async def test_brief_revision_feedback_exits_again():
     mock_brief = ResearchBrief(
         title="Quantum Computing",
         research_question="Focus on hardware approaches.",
-        approach="Deep dive into hardware.",
+        approach=["Deep dive into hardware"],
         ready_to_proceed=False,
     )
     mock_chain = AsyncMock()
