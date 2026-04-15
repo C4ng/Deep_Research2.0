@@ -198,44 +198,172 @@ brave_api_key: str = Field(default="", ...)
 
 **Provider decision**: Brave (settled — see Research section above).
 
-1. Add `brave-search-python-client` to `pyproject.toml` optional dependencies
-   (or use raw `httpx` — evaluate which is cleaner)
+**Verified API response format** (from live test call):
+```json
+{
+  "web": {
+    "results": [
+      {
+        "title": "LangChain overview - Docs by LangChain",
+        "url": "https://docs.langchain.com/oss/python/langchain/overview",
+        "description": "Different providers have unique APIs...",
+        "extra_snippets": [
+          "LangChain · LangGraph · Integrations...",
+          "If you don't need these capabilities...",
+          "Different providers have unique APIs...",
+          "Join us May 13th & May 14th..."
+        ]
+      }
+    ]
+  }
+}
+```
+Note: `description` may contain `<strong>` HTML tags. `extra_snippets` returns
+up to 4-5 entries per result (not always 5). Some snippets are navigation/
+boilerplate — the summarization LLM will filter those naturally.
 
-2. Implement `BraveSearchTool(BaseSearchTool)`:
-   - Only `search()` method — calls Brave Web Search API
-   - Request: `GET /res/v1/web/search?q={query}&count={max_results}&extra_snippets=true`
-   - Auth: `X-Subscription-Token` header with API key
-   - Map response to `SearchResult`:
-     - `url` = `result.url`
-     - `title` = `result.title`
-     - `content` = `result.description` (snippet)
-     - `raw_content` = `description` + `"\n\n"` + `"\n\n".join(extra_snippets)`
-       (concatenated excerpts for summarization; `None` if no extra_snippets)
-   - Dedup across queries by URL (same pattern as Tavily)
+#### 0a. Dependency: use `httpx` (already available via `tavily-python`)
 
-3. Create the `@tool` wrapper function (same pattern as `tavily_search`):
-   ```python
-   @tool(description=BRAVE_SEARCH_DESCRIPTION)
-   async def brave_search(queries, max_results, config):
-       configurable = Configuration.from_runnable_config(config)
-       search_tool = BraveSearchTool(api_key=configurable.brave_api_key, config=config)
-       return await search_tool.search_and_summarize(queries, max_results=max_results)
-   ```
+`tavily-python` depends on `httpx`, so it's already in our environment. Use
+raw `httpx.AsyncClient` for Brave API calls — avoids adding a new dependency
+for a simple REST API (one endpoint, one GET request).
 
-4. Update registry to route based on `SearchAPI` enum:
-   ```python
-   class SearchAPI(Enum):
-       TAVILY = "tavily"
-       BRAVE = "brave"     # new
-   ```
+No `pyproject.toml` change needed.
 
-5. Add `brave_api_key` to Configuration with `BRAVE_SEARCH_API_KEY` env var
+#### 0b. `BraveSearchTool(BaseSearchTool)` in `brave.py`
 
-**Tests**:
-- Unit: `BraveSearchTool.search()` with mocked HTTP responses — verify
-  `SearchResult` mapping, extra_snippets concatenation, URL dedup
-- Integration: `search_and_summarize()` with real Brave API — verify formatting,
-  source IDs, summarization of concatenated snippets
+Only implements `search()` — same pattern as `TavilySearchTool`:
+
+```python
+class BraveSearchTool(BaseSearchTool):
+    def __init__(self, api_key: str, config: RunnableConfig | None = None):
+        super().__init__(config=config)
+        self._api_key = api_key
+
+    async def search(self, queries: list[str], *, max_results: int = 5) -> list[SearchResult]:
+        async with httpx.AsyncClient() as client:
+            # Fan out queries concurrently (same as Tavily)
+            tasks = [
+                client.get(
+                    "https://api.search.brave.com/res/v1/web/search",
+                    params={"q": query, "count": max_results, "extra_snippets": "true"},
+                    headers={
+                        "X-Subscription-Token": self._api_key,
+                        "Accept": "application/json",
+                    },
+                )
+                for query in queries
+            ]
+            responses = await asyncio.gather(*tasks)
+
+        # Dedup by URL across queries (same pattern as Tavily)
+        seen_urls: dict[str, SearchResult] = {}
+        for response in responses:
+            response.raise_for_status()
+            data = response.json()
+            for result in data.get("web", {}).get("results", []):
+                url = result["url"]
+                if url in seen_urls:
+                    continue
+
+                description = result.get("description", "")
+                extra_snippets = result.get("extra_snippets", [])
+
+                # Strip HTML tags from description (Brave returns <strong> etc)
+                clean_description = _strip_html(description)
+
+                # Concatenate description + extra_snippets for raw_content
+                if extra_snippets:
+                    raw_content = clean_description + "\n\n" + "\n\n".join(extra_snippets)
+                else:
+                    raw_content = None  # fallback: skip summarization, use snippet
+
+                seen_urls[url] = SearchResult(
+                    url=url,
+                    title=result.get("title", ""),
+                    content=clean_description,
+                    raw_content=raw_content,
+                )
+        return list(seen_urls.values())
+```
+
+Helper: `_strip_html()` — simple regex to remove `<strong>`, `<em>`, etc.
+from Brave's description field. Not a full HTML parser, just tag stripping.
+
+#### 0c. `@tool` wrapper function (same pattern as `tavily_search`)
+
+```python
+BRAVE_SEARCH_DESCRIPTION = (
+    "A search engine optimized for comprehensive, accurate, and trusted results. "
+    "Useful for when you need to answer questions about current events."
+)
+
+@tool(description=BRAVE_SEARCH_DESCRIPTION)
+async def brave_search(
+    queries: List[str],
+    max_results: Annotated[int, InjectedToolArg] = 5,
+    config: Annotated[RunnableConfig | None, InjectedToolArg] = None,
+) -> str:
+    configurable = Configuration.from_runnable_config(config)
+    search_tool = BraveSearchTool(
+        api_key=configurable.brave_api_key, config=config
+    )
+    return await search_tool.search_and_summarize(
+        queries, max_results=max_results
+    )
+```
+
+#### 0d. Configuration: add `brave_api_key` + `SearchAPI.BRAVE`
+
+In `configuration.py`:
+```python
+class SearchAPI(Enum):
+    TAVILY = "tavily"
+    BRAVE = "brave"
+
+# In Configuration class:
+brave_api_key: str = Field(
+    default="",
+    description="Brave Search API key (loaded from BRAVE_SEARCH_API_KEY env var)",
+)
+```
+
+No other config changes — `from_runnable_config()` already handles env var
+resolution via `os.environ.get(field_name.upper())`, so `BRAVE_API_KEY` will
+be picked up automatically.
+
+#### 0e. Registry: route by SearchAPI enum
+
+In `registry.py`:
+```python
+from deep_research.tools.search.brave import brave_search
+
+async def get_search_tools(config: RunnableConfig | None = None) -> list:
+    configurable = Configuration.from_runnable_config(config)
+    if configurable.search_api == SearchAPI.TAVILY:
+        return [tavily_search]
+    if configurable.search_api == SearchAPI.BRAVE:
+        return [brave_search]
+    return []
+```
+
+#### 0f. Tests
+
+**Unit** (`tests/test_search_providers.py`):
+- `test_brave_search_maps_results` — mock `httpx.AsyncClient.get` with a
+  canned Brave response → verify `SearchResult` fields (url, title, content,
+  raw_content with concatenated snippets)
+- `test_brave_search_strips_html` — description with `<strong>` tags →
+  content has clean text
+- `test_brave_search_dedup_urls` — two queries returning overlapping URLs →
+  deduplicated by URL
+- `test_brave_search_no_extra_snippets` — result without `extra_snippets` →
+  `raw_content=None`, `content` = description
+
+**Integration** (`tests/test_search_providers.py`, `@pytest.mark.integration`):
+- `test_brave_search_and_summarize` — real Brave API call → verify formatted
+  output has `[source_id]` tags, summaries are generated from concatenated
+  snippets
 
 ---
 
