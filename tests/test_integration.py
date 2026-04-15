@@ -45,7 +45,6 @@ REVIEW_ONLY_CONFIG = {
 INITIAL_STATE = {
     "messages": [],
     "research_brief": "",
-    "is_simple": False,
     "notes": "",
     "report_metadata": "",
     "final_report": "",

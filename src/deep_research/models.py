@@ -37,12 +37,6 @@ class ResearchBrief(BaseModel):
     approach: str = Field(
         description="Strategic guidance: what kind of question, angles to cover, breadth vs depth"
     )
-    is_simple: bool = Field(
-        description=(
-            "Whether a single researcher can handle this question. "
-            "True for narrow, factual queries with one clear answer expected."
-        )
-    )
     ready_to_proceed: bool = Field(
         default=False,
         description="Whether the user approved the brief or requested changes"

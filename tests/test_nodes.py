@@ -31,7 +31,6 @@ def sample_state():
     return {
         "messages": [HumanMessage(content="What are the main causes and effects of coral reef bleaching?")],
         "research_brief": "",
-        "is_simple": False,
         "notes": "",
         "final_report": "",
     }
@@ -76,14 +75,6 @@ async def test_write_research_brief_has_structure(sample_state):
     assert len(lines) >= 2
 
 
-@pytest.mark.integration
-@pytest.mark.asyncio
-async def test_write_research_brief_returns_is_simple(sample_state):
-    """Brief output includes is_simple routing flag."""
-    result = await write_research_brief(sample_state, config={"configurable": {}})
-    assert "is_simple" in result.update
-    assert isinstance(result.update["is_simple"], bool)
-
 
 @pytest.mark.integration
 @pytest.mark.asyncio
@@ -92,7 +83,6 @@ async def test_final_report_generation():
     state = {
         "messages": [],
         "research_brief": "Title: Coral Reef Bleaching\n\nWhat are the main causes and effects of coral reef bleaching?",
-        "is_simple": False,
         "notes": (
             "Coral bleaching occurs when water temperatures rise above 1°C "
             "over the summer maximum for 4+ weeks. The primary cause is climate "
@@ -622,23 +612,10 @@ def test_research_brief_schema():
         title="Quantum Computing 2025",
         research_question="What is the current state of quantum computing?",
         approach="Broad survey covering technology, players, applications, challenges.",
-        is_simple=False,
     )
     assert brief.title
     assert brief.research_question
     assert brief.approach
-    assert brief.is_simple is False
-
-
-def test_research_brief_simple():
-    """ResearchBrief for a simple question."""
-    brief = ResearchBrief(
-        title="React Version",
-        research_question="What is the latest stable version of React?",
-        approach="Single factual lookup.",
-        is_simple=True,
-    )
-    assert brief.is_simple is True
 
 
 # --- Brief helper + routing tests ---
@@ -650,7 +627,6 @@ def test_format_brief():
         title="Test Title",
         research_question="What is X?",
         approach="Survey approach.",
-        is_simple=False,
     )
     result = _format_brief(brief)
     assert "Title: Test Title" in result
@@ -668,13 +644,12 @@ async def test_write_research_brief_includes_approach(sample_state):
 
 
 @pytest.mark.asyncio
-async def test_brief_review_disabled_routes_to_researcher():
-    """Review disabled + is_simple=True → routes to researcher."""
+async def test_brief_review_disabled_routes_to_coordinator():
+    """Review disabled → always routes to coordinator."""
     mock_brief = ResearchBrief(
         title="React Version",
         research_question="What is the latest React version?",
         approach="Factual lookup.",
-        is_simple=True,
     )
     mock_chain = AsyncMock()
     mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
@@ -682,36 +657,6 @@ async def test_brief_review_disabled_routes_to_researcher():
     state = {
         "messages": [HumanMessage(content="What is the latest React version?")],
         "research_brief": "",
-        "is_simple": False,
-        "notes": "",
-        "final_report": "",
-    }
-    config = {"configurable": {"allow_human_review": False}}
-
-    with patch("deep_research.nodes.brief.configurable_model") as mock_model:
-        mock_model.with_structured_output.return_value.with_retry.return_value.with_config.return_value = mock_chain
-        result = await write_research_brief(state, config)
-
-    assert result.goto == "researcher"
-    assert result.update["is_simple"] is True
-
-
-@pytest.mark.asyncio
-async def test_brief_review_disabled_routes_to_coordinator():
-    """Review disabled + is_simple=False → routes to coordinator."""
-    mock_brief = ResearchBrief(
-        title="Quantum Computing",
-        research_question="What is the state of quantum computing?",
-        approach="Broad survey.",
-        is_simple=False,
-    )
-    mock_chain = AsyncMock()
-    mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
-
-    state = {
-        "messages": [HumanMessage(content="What is the state of quantum computing?")],
-        "research_brief": "",
-        "is_simple": False,
         "notes": "",
         "final_report": "",
     }
@@ -722,7 +667,6 @@ async def test_brief_review_disabled_routes_to_coordinator():
         result = await write_research_brief(state, config)
 
     assert result.goto == "coordinator"
-    assert result.update["is_simple"] is False
 
 
 @pytest.mark.asyncio
@@ -732,7 +676,6 @@ async def test_brief_review_enabled_first_draft_exits():
         title="Quantum Computing",
         research_question="What is the state of quantum computing?",
         approach="Broad survey.",
-        is_simple=False,
     )
     mock_chain = AsyncMock()
     mock_chain.ainvoke = AsyncMock(return_value=mock_brief)
@@ -740,7 +683,6 @@ async def test_brief_review_enabled_first_draft_exits():
     state = {
         "messages": [HumanMessage(content="What is the state of quantum computing?")],
         "research_brief": "",
-        "is_simple": False,
         "notes": "",
         "final_report": "",
     }
@@ -765,7 +707,6 @@ async def test_brief_revision_approved_proceeds():
         title="Quantum Computing",
         research_question="What is the state of quantum computing?",
         approach="Broad survey.",
-        is_simple=False,
         ready_to_proceed=True,
     )
     mock_chain = AsyncMock()
@@ -778,7 +719,6 @@ async def test_brief_revision_approved_proceeds():
             HumanMessage(content="looks good, go ahead"),
         ],
         "research_brief": "Title: Quantum...\n\nQuestion\n\nApproach: Survey",
-        "is_simple": False,
         "notes": "",
         "final_report": "",
     }
@@ -798,7 +738,6 @@ async def test_brief_revision_feedback_exits_again():
         title="Quantum Computing",
         research_question="Focus on hardware approaches.",
         approach="Deep dive into hardware.",
-        is_simple=False,
         ready_to_proceed=False,
     )
     mock_chain = AsyncMock()
@@ -811,7 +750,6 @@ async def test_brief_revision_feedback_exits_again():
             HumanMessage(content="focus more on hardware"),
         ],
         "research_brief": "Title: Quantum...\n\nQuestion\n\nApproach: Survey",
-        "is_simple": False,
         "notes": "",
         "final_report": "",
     }

@@ -69,7 +69,6 @@ async def test_structured_output(name: str, model_str: str, thinking_budget: int
 
         print(f"Status:   SUCCESS ({elapsed:.1f}s)")
         print(f"Title:    {brief.title}")
-        print(f"Simple:   {brief.is_simple}")
         print(f"Question: {brief.research_question[:120]}...")
         print(f"Approach: {brief.approach[:120]}...")
         return True

@@ -35,7 +35,7 @@ The brief is now a single, well-articulated question that preserves the user's i
 
 ### Problem 3: All queries get the same treatment
 
-A simple factual question ("What is the latest React version?") got 5 researchers and multi-round reflection. Now `is_simple` routes these directly to a single researcher.
+A simple factual question ("What is the latest React version?") got 5 researchers and multi-round reflection. Originally `is_simple` routed these to a single researcher, but this was later removed (non-deterministic LLM output made the binary classification unstable). The coordinator now handles all queries — simple questions naturally get fewer subtopics.
 
 ### Problem 4: No user involvement before research
 
@@ -51,7 +51,7 @@ The user had no chance to shape the research plan. Now the brief is a draft plan
 
 **One prompt handles both fresh generation and revision**: The `research_brief_prompt` has optional `{prior_brief}` and `{feedback}` sections. When empty, it generates fresh. When populated, it revises. The LLM also sets `ready_to_proceed` to signal whether the user approved or requested changes — this drives routing without any heuristic code.
 
-**write_brief owns routing**: The brief node determines `is_simple` and `ready_to_proceed`, and routes directly via `Command`. No separate conditional edge, routing function, or review node. The node makes all decisions and routes itself.
+**write_brief owns routing**: The brief node determines `ready_to_proceed` and routes directly via `Command`. No separate conditional edge, routing function, or review node. The node makes all decisions and routes itself. Always routes to coordinator (original `is_simple` routing was removed in increment 9).
 
 **Brief includes strategic guidance**: The `approach` field is not just what to research but how — angles to cover, breadth vs depth, priorities. The coordinator reads this as a starting point for decomposition. Strategy flows: brief approach → coordinator decomposition → researcher topic/context → search queries. The user can shape strategy by modifying the approach during review.
 
@@ -79,7 +79,6 @@ class ResearchBrief(BaseModel):
     title: str                    # concise title
     research_question: str        # detailed research question with constraints
     approach: str                 # strategic guidance: angles, breadth/depth, priorities
-    is_simple: bool               # whether a single researcher can handle this
     ready_to_proceed: bool        # whether the user approved the brief or requested changes
 ```
 
@@ -102,11 +101,10 @@ IN:  messages: [Human(query), AI(verification), ...]
      research_brief: "" or prior brief string
      
 LLM: research_brief_prompt(messages, prior_brief, feedback)
-   → ResearchBrief(title, question, approach, is_simple, ready_to_proceed)
+   → ResearchBrief(title, question, approach, ready_to_proceed)
 
 OUT: Command(goto="__end__")       → first draft or revision with changes (review cycle)
-     Command(goto="researcher")    → approved + is_simple=True
-     Command(goto="coordinator")   → approved + is_simple=False
+     Command(goto="coordinator")   → approved (always coordinator)
 ```
 
 ### coordinator
@@ -160,8 +158,7 @@ User sends question
             │     → LLM revises brief, sets ready_to_proceed
             │     → feedback → exit again / approval → proceed
             └─ [ready_to_proceed or review disabled]
-                 ├─ [is_simple=true]  → Command(goto="researcher")
-                 └─ [is_simple=false] → Command(goto="coordinator")
+                 → Command(goto="coordinator")
                       → ... research pipeline ... → final_report → END
 ```
 
@@ -192,14 +189,15 @@ Reform the brief to produce a single research question instead of decomposed sub
 - Update `write_research_brief` to format the new schema
 - Update tests
 
-### Step 1 — Add is_simple routing + researcher adapter ✅
+### Step 1 — Add is_simple routing + researcher adapter ✅ (later removed in increment 9)
 
 Simple questions bypass the coordinator and go directly to a single researcher.
+**Note**: `is_simple` was removed in increment 9 — non-deterministic LLM output made the binary classification unstable. All queries now route to coordinator.
 
-- Add `is_simple: bool` to `ResearchBrief` and `AgentState`
-- Add `route_by_complexity` conditional edge after `write_brief`
-- Add `run_single_researcher` adapter in `graph.py`
-- Tests for routing function
+- ~~Add `is_simple: bool` to `ResearchBrief` and `AgentState`~~
+- ~~Add `route_by_complexity` conditional edge after `write_brief`~~
+- ~~Add `run_single_researcher` adapter in `graph.py`~~
+- ~~Tests for routing function~~
 
 ### Step 2 — Update coordinator prompt with strategy examples ✅
 
@@ -264,11 +262,10 @@ call LLM, route via Command.
 - Format brief string from structured output
 - **Routing decision**:
   - If `allow_human_review` and not `ready_to_proceed`
-    → `Command(goto="__end__", update={research_brief, is_simple, messages: [AIMessage with brief]})`
+    → `Command(goto="__end__", update={research_brief, messages: [AIMessage with brief]})`
     The user sees the brief and can respond with feedback or approval
   - If review disabled, or `ready_to_proceed=True`
-    → `Command(goto="researcher" or "coordinator", update={research_brief, is_simple})`
-    based on `is_simple`
+    → `Command(goto="coordinator", update={research_brief})`
 
 **`ready_to_proceed` field on ResearchBrief** (default: False):
 - On a fresh brief, LLM sets it False (needs user review)
@@ -279,16 +276,12 @@ call LLM, route via Command.
 - Multiple review rounds supported naturally
 
 **Return type change**: `write_research_brief` now returns
-`Command[Literal["__end__", "researcher", "coordinator"]]` instead of `dict`.
+`Command[Literal["__end__", "coordinator"]]` instead of `dict`.
 
-### Step 10 — Move run_single_researcher to adapter.py ✅
+### Step 10 — Move run_single_researcher to adapter.py ✅ (later removed in increment 9)
 
 Extract the researcher adapter from graph.py into its own module.
-
-**nodes/researcher/adapter.py** (new file):
-- Move `run_single_researcher` function from `graph/graph.py`
-- Maps AgentState → ResearcherState, invokes researcher_subgraph, maps back
-- Import `researcher_subgraph` from `nodes/researcher/__init__`
+**Note**: `run_single_researcher` and `adapter.py` were removed in increment 9 when `is_simple` was removed — all queries now go through coordinator.
 
 ### Step 11 — Clean graph.py to pure orchestration ✅
 
@@ -297,22 +290,17 @@ Remove all node logic from graph.py. It should only register nodes and wire edge
 **graph/graph.py**:
 - Remove `human_review` function and node
 - Remove `route_by_complexity` function and conditional edge
-- Remove `run_single_researcher` function (now in adapter.py)
-- Remove imports no longer needed: `interrupt`, `configurable_model`,
-  `Configuration`, `HumanMessage`
-- Import `run_single_researcher` from `nodes.researcher.adapter`
-- Node registration: clarify, write_brief, researcher, coordinator, final_report
-- Edges: `START → clarify`, `researcher → final_report`, `coordinator → final_report`,
-  `final_report → END`
+- Node registration: clarify, write_brief, coordinator, final_report
+- Edges: conditional `START → clarify|write_brief` (via `_route_start`),
+  `coordinator → final_report`, `final_report → END`
 - No edge from write_brief — it routes itself via Command
 - No edge from clarify — it routes itself via Command
-- Update module docstring to reflect new architecture
-- Result: 52 lines of pure orchestration
+- `_route_start` skips clarify on resume if `research_brief` exists (added in increment 9)
 
 ### Step 12 — Tests ✅
 
 **Unit tests** (35 total, mocked LLM, no API calls):
-- Brief node: review disabled → routes to researcher or coordinator based on is_simple
+- Brief node: review disabled → routes to coordinator
 - Brief node: review enabled, first draft → routes to __end__ with brief
 - Brief node: revision approved (ready_to_proceed=True) → routes to coordinator
 - Brief node: revision with feedback (ready_to_proceed=False) → exits to __end__ again
@@ -341,7 +329,7 @@ Remove all node logic from graph.py. It should only register nodes and wire edge
 
 ### What to watch
 
-- **Clarification on re-invocation**: When the graph is re-invoked for brief review, clarify runs again. It sees the full history and should skip. The prompt says "If the message history shows you have already asked a clarifying question, almost never ask another." This works in testing, but edge cases (long histories, ambiguous follow-up messages) haven't been stress-tested.
+- **Clarification on re-invocation**: Fixed in increment 9 — `_route_start()` conditional routing at START skips clarify entirely when `research_brief` exists in state. No longer relies on the clarify prompt to "skip" on re-invocation.
 
 - **Approach field quality**: The approach is free-text from the LLM. Its usefulness depends on prompt quality. In testing, the LLM produces reasonable bullet-point strategies, but we haven't measured whether the coordinator actually decomposes differently with vs without approach guidance.
 
@@ -357,7 +345,7 @@ Remove all node logic from graph.py. It should only register nodes and wire edge
 
 2. **Should there be a separate revision prompt?** No. One prompt with optional `{prior_brief}` and `{feedback}` sections handles both fresh generation and revision. When empty, it generates fresh; when populated, it revises.
 
-3. **Should `is_simple` be more nuanced?** Kept binary for now. Start simple, add nuance if the binary gate proves too coarse.
+3. **Should `is_simple` be more nuanced?** Removed entirely in increment 9. The binary classification was non-deterministic — the same question could flip between simple/complex across LLM calls. Coordinator handles all queries; simple questions naturally get fewer subtopics.
 
 4. **Does the clarify node interfere with brief review?** On re-invocation for brief review, clarify sees the full message history and skips. Tested and working, though edge cases with long histories remain untested.
 
@@ -367,15 +355,15 @@ Remove all node logic from graph.py. It should only register nodes and wire edge
 
 ### New files
 - `src/deep_research/nodes/clarify.py` — clarification node
-- `src/deep_research/nodes/researcher/adapter.py` — researcher state adapter
+- ~~`src/deep_research/nodes/researcher/adapter.py`~~ — removed in increment 9
 
 ### Modified files
-- `src/deep_research/models.py` — added ClarifyOutput, ResearchBrief (reformed with approach, is_simple, ready_to_proceed)
+- `src/deep_research/models.py` — added ClarifyOutput, ResearchBrief (reformed with approach, ready_to_proceed)
 - `src/deep_research/prompts.py` — added clarify_prompt, rewrote research_brief_prompt (with revision support), simplified coordinator_system_prompt
-- `src/deep_research/nodes/brief.py` — rewritten with Command routing + review cycle
-- `src/deep_research/graph/graph.py` — simplified to pure orchestration (52 lines)
+- `src/deep_research/nodes/brief.py` — rewritten with Command routing + review cycle, always routes to coordinator
+- `src/deep_research/graph/graph.py` — pure orchestration with conditional START routing
 - `src/deep_research/configuration.py` — added allow_clarification, allow_human_review
-- `src/deep_research/state.py` — added is_simple to AgentState
+- `src/deep_research/state.py` — AgentState updates
 - `src/deep_research/__init__.py` — added ClarifyOutput, ResearchBrief to public exports
 - `tests/test_nodes.py` — 35 tests covering all new behavior
 - `tests/test_integration.py` — 3 integration tests including full HITL review cycle

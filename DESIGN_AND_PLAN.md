@@ -171,11 +171,11 @@ src/deep_research/
 ```
     nodes/
         clarify.py         # clarify_with_user node
-    models.py              # + ClarifyOutput; ResearchBrief simplified (single question + is_simple)
+    models.py              # + ClarifyOutput; ResearchBrief simplified (single question)
     prompts.py             # + clarify_prompt; research_brief_prompt rewritten; coordinator_system_prompt updated
-    state.py               # + is_simple to AgentState
+    state.py               # AgentState updates
     graph/
-        graph.py           # + clarify node, conditional routing (simple → researcher, else → coordinator)
+        graph.py           # + clarify node, always routes to coordinator
 ```
 
 ### Increment 5 — adds
@@ -239,10 +239,10 @@ src/deep_research/
 
 - `clarify_with_user` node: resolve ambiguity before research begins (optional, config-gated)
 - Brief reform: single well-articulated research question (drop premature decomposition into subtopics — that's the coordinator's job)
-- Simple question routing: `is_simple` flag bypasses coordinator, goes direct to single researcher
+- Always routes to coordinator (original `is_simple` binary classification was removed — non-deterministic LLM output made it unstable; coordinator handles both simple and complex queries naturally)
 - Coordinator prompt update: reason deliberately about research strategy before decomposing (no fixed type enum — the coordinator thinks freely about approach)
 
-**Delivers**: Adaptive system — simple questions get fast answers, complex questions get full multi-topic research, coordinator reasons about strategy instead of always decomposing into 5 topics.
+**Delivers**: Well-formed research questions through clarification and brief review, coordinator reasons about strategy instead of always decomposing into 5 topics.
 
 ### Increment 5 — Citation System
 **Goal**: Structured citation tracking from search through compression, with stable source IDs and verifiable references.

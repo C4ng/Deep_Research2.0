@@ -32,7 +32,7 @@ def _format_brief(brief: ResearchBrief) -> str:
 
 async def write_research_brief(
     state: AgentState, config: RunnableConfig
-) -> Command[Literal["__end__", "researcher", "coordinator"]]:
+) -> Command[Literal["__end__", "coordinator"]]:
     """Generate or revise a research brief, then route.
 
     Reads messages and any existing brief/feedback context. The LLM
@@ -75,7 +75,7 @@ async def write_research_brief(
     logger.info("Generating research brief from %d messages", len(messages))
     brief: ResearchBrief = await model.ainvoke([HumanMessage(content=prompt)])
     brief_str = _format_brief(brief)
-    logger.info("Brief generated: %s (is_simple=%s, ready=%s)", brief.title, brief.is_simple, brief.ready_to_proceed)
+    logger.info("Brief generated: %s (ready=%s)", brief.title, brief.ready_to_proceed)
 
     if configurable.allow_human_review and not brief.ready_to_proceed:
         # Show to user for review (first draft or revision with changes)
@@ -84,7 +84,6 @@ async def write_research_brief(
             goto="__end__",
             update={
                 "research_brief": brief_str,
-                "is_simple": brief.is_simple,
                 "messages": [AIMessage(content=(
                     "Here's the research plan I've drafted. "
                     "Let me know if you'd like to adjust the scope, "
@@ -94,13 +93,14 @@ async def write_research_brief(
             },
         )
 
-    # User approved or review disabled — proceed to research
-    next_node = "researcher" if brief.is_simple else "coordinator"
-    logger.info("Proceeding to %s", next_node)
+    # User approved or review disabled — proceed to research.
+    # On approval, preserve the prior brief (re-generation is non-deterministic).
+    if prior_brief and brief.ready_to_proceed:
+        brief_str = prior_brief
+    logger.info("Proceeding to coordinator")
     return Command(
-        goto=next_node,
+        goto="coordinator",
         update={
             "research_brief": brief_str,
-            "is_simple": brief.is_simple,
         },
     )

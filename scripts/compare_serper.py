@@ -32,7 +32,6 @@ CONFIG = {
 INITIAL_STATE = {
     "messages": [HumanMessage(content=QUERY)],
     "research_brief": "",
-    "is_simple": False,
     "notes": "",
     "report_metadata": "",
     "final_report": "",

@@ -74,11 +74,7 @@ Approach — how to investigate:
    coordinator will decide the specific decomposition into research tasks.
 9. Use bullet points — easy to scan and modify.
 
-Simplicity assessment:
-10. Determine if this is a simple question that a single researcher can
-    handle without multi-topic decomposition. Examples: "What is the
-    latest stable version of React?", "When was company X founded?"
-    Set is_simple accordingly."""
+Do NOT include subtopics — a downstream coordinator handles decomposition."""
 
 
 researcher_prompt = """\
