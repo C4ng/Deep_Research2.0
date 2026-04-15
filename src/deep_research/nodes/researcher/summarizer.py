@@ -86,6 +86,12 @@ async def summarize_research(state: ResearcherState, config: RunnableConfig) -> 
         date=datetime.now().strftime("%B %d, %Y"),
     ) + findings_hint
 
+    # TODO(compression): With 3 rounds × 3 searches, tool_results can reach ~90K chars.
+    # The summarization model's max_tokens (4096) caps output at ~16K chars, so actual
+    # compression ratio is dictated by output limit, not prompt instructions (observed 7%
+    # instead of target 30%). Options: (1) compress per-round instead of all-at-once,
+    # (2) raise max_tokens, (3) chunk-and-merge. Per-round is cleanest — avoids
+    # re-compressing earlier rounds and keeps each pass within output budget.
     logger.info("Compressing %d chars of tool results", len(tool_results))
     response = await model.ainvoke([HumanMessage(content=prompt)])
     compressed = response.text or ""

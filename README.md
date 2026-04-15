@@ -409,6 +409,10 @@ This is a working prototype. Areas for further development:
 - The `BaseSearchTool` abstraction supports this: implement a new provider and register it
 - Search tool selection could be dynamic based on the research brief's domain
 
+**Research Compression**
+- The summarizer compresses all tool results in a single pass after the researcher exits, but with 3 rounds × 3 searches the input can reach ~90K chars — the model's output token limit (4096) becomes the bottleneck, producing ~7% retention instead of the target 30-50%
+- Fix: compress per-round instead of all-at-once, so each pass stays within output budget and earlier rounds aren't re-compressed
+
 **Error Handling and Resilience**
 - The prototype has fail-fast on tool errors and LLM knowledge fallback, but doesn't retry transient failures
 - Rate limiting across concurrent researchers could be more sophisticated (currently relies on provider-side limits)
