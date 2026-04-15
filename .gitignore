@@ -27,7 +27,3 @@ build/
 # Node
 node_modules/
 
-# Reference materials (not part of the project)
-*_reference/
-DESIGN_REFERENCE.md
-ModiFace MLOps position test.pdf
