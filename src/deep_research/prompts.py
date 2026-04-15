@@ -201,7 +201,19 @@ You are assessing the progress of a research task. Today's date is {date}.
 3. Identify gaps that are within the scope of the assigned topic and
    realistically answerable by web search. Do not invent deeper questions
    beyond what the topic asks for.
-4. Note any contradictions between sources (including against prior findings).
+4. When sources disagree, reason about WHY before flagging a contradiction.
+   Try to resolve the conflict — common resolvable patterns include:
+   - Temporal variation: same metric from different dates — prefer the
+     most recent source and note the date in your finding.
+   - Scope mismatch: sources describing different things under the same
+     name — label each finding with what it specifically refers to.
+   - Precision difference: approximate vs exact figures — keep the most
+     precise value.
+   - Different aspects: statements about different dimensions that don't
+     actually conflict — present as complementary findings.
+   These are examples, not an exhaustive list. Apply the same reasoning
+   to any discrepancy: explain it, resolve it if possible, and only flag
+   as a contradiction what remains genuinely unresolved.
 5. Decide whether further searching would be productive — prioritize
    stopping with good coverage over exhaustive completeness.
 </instructions>
@@ -211,6 +223,9 @@ key_findings:
 - Include specific facts and data points discovered this round.
 - Reference sources using their [source_id] tags from the search results
   (e.g., "Market reached $3.77B [a1b2c3d4]").
+- When multiple sources report the same metric, keep only the most recent
+  or most precise value. When sources describe different things under the
+  same name, label each finding specifically.
 - Also capture strategic observations: connections between sources, unexpected
   scope, quality signals.
 - These accumulate across rounds — be concrete so future rounds know what's covered.
@@ -239,17 +254,20 @@ missing_info:
   but stay at the topic's level of detail — not niche sub-questions.
 
 contradictions:
-- Output the COMPLETE current list of all known contradictions — not just
-  new ones from this round. This field overwrites the previous round's list.
+- Output the COMPLETE current list of genuinely unresolved contradictions —
+  not just new ones from this round. This field overwrites the previous list.
 - Each entry represents one disputed matter. There must be at most one entry
-  per disputed matter — consolidate all sources and evidence for the same
-  disagreement into a single entry.
-- Remove contradictions resolved by new evidence.
+  per disputed matter — consolidate all sources and evidence into a single entry.
+- Remove contradictions resolved by new evidence or by reasoning (see
+  instruction 4). Only include conflicts you could not explain or resolve.
 - Cite which sources disagree using their [source_id] tags
   (e.g., "[a1b2c3d4] says X, [e5f6a7b8] says Y").
 
 next_queries:
 - Target the gaps listed in missing_info. Do not repeat prior searches.
+- Also add queries to resolve contradictions that need a current or
+  authoritative source to settle (e.g., searching for the latest official
+  value when sources from different dates disagree).
 
 prior_gaps_filled:
 - Count how many gaps listed in prior_context's "Gaps identified last round"
@@ -366,7 +384,9 @@ overall_assessment:
 
 cross_topic_contradictions:
 - Cite which researchers disagree and on what specific point.
-- Only flag genuine conflicts, not differences in scope or emphasis.
+- Only flag genuine conflicts — incompatible claims about the same thing.
+- Exclude temporal variation, scope mismatches, precision differences,
+  and statements about different aspects of the same subject.
 
 coverage_gaps:
 - Only major aspects of the brief not addressed by any researcher.
