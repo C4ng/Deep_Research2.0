@@ -117,9 +117,7 @@ async def researcher_tools(state: ResearcherState, config: RunnableConfig) -> di
     logger.info("Executing %d tool calls in parallel: %s", len(tool_names), tool_names)
 
     tool_tasks = [
-        _execute_tool_safely(
-            tools_by_name[tc["name"]], tc["args"], config
-        )
+        _execute_tool_safely(tools_by_name[tc["name"]], tc["args"], config)
         for tc in most_recent.tool_calls
         if tc["name"] in tools_by_name
     ]

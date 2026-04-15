@@ -13,7 +13,8 @@ from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration
 from deep_research.graph.model import build_model_config, configurable_model
-from deep_research.prompts import compress_research_prompt
+from deep_research.helpers.errors import NO_RESULTS_PREFIX, TOOL_ERROR_PREFIX
+from deep_research.prompts import compress_research_prompt, llm_knowledge_fallback_prompt
 from deep_research.state import ResearcherState
 
 logger = logging.getLogger(__name__)
@@ -22,23 +23,29 @@ logger = logging.getLogger(__name__)
 COMPRESSION_THRESHOLD = 2000
 
 
+def _is_junk(content: str) -> bool:
+    """Check if a ToolMessage is an error or empty-result placeholder."""
+    return content.startswith(TOOL_ERROR_PREFIX) or content.startswith(NO_RESULTS_PREFIX)
+
+
 async def summarize_research(state: ResearcherState, config: RunnableConfig) -> dict:
     """Compress accumulated tool results into concise research notes.
 
     Extracts raw ToolMessage content from messages, compresses via
     the summarization model, and writes to notes for downstream use.
-    Passes accumulated_findings to the prompt so the summarizer knows
-    what reflection identified as important — helps prioritize.
+    Falls back to LLM knowledge generation when no real search data exists.
     """
-    # Extract raw tool results from messages
+    messages = state.get("messages", [])
+
+    # Extract real tool results — skip errors and "no results found" messages
     tool_results = "\n\n".join(
-        m.content for m in state.get("messages", [])
-        if isinstance(m, ToolMessage) and m.content
+        m.content for m in messages
+        if isinstance(m, ToolMessage) and m.content and not _is_junk(m.content)
     )
 
     if not tool_results:
-        logger.warning("No tool results to compress")
-        return {"notes": ""}
+        logger.info("No usable search results — falling back to LLM knowledge")
+        return await _generate_from_llm_knowledge(state, config)
 
     # Skip compression for short content
     if len(tool_results) < COMPRESSION_THRESHOLD:
@@ -91,3 +98,33 @@ async def summarize_research(state: ResearcherState, config: RunnableConfig) -> 
     logger.info("Compressed to %d chars (%.0f%% of original)", len(compressed), ratio)
 
     return {"notes": compressed}
+
+
+async def _generate_from_llm_knowledge(
+    state: ResearcherState, config: RunnableConfig
+) -> dict:
+    """Generate research notes from LLM training knowledge when search is unavailable."""
+    configurable = Configuration.from_runnable_config(config)
+
+    model_config = build_model_config(
+        model=configurable.research_model,
+        max_tokens=configurable.research_model_max_tokens,
+        temperature=configurable.research_model_temperature,
+        thinking_budget=configurable.research_model_thinking_budget,
+    )
+
+    model = (
+        configurable_model
+        .with_retry(stop_after_attempt=configurable.max_structured_output_retries)
+        .with_config(configurable=model_config)
+    )
+
+    prompt = llm_knowledge_fallback_prompt.format(
+        research_topic=state["research_topic"],
+        date=datetime.now().strftime("%B %d, %Y"),
+    )
+
+    response = await model.ainvoke([HumanMessage(content=prompt)])
+    notes = response.text or ""
+    logger.info("LLM knowledge fallback produced %d chars", len(notes))
+    return {"notes": notes}

@@ -11,19 +11,18 @@ from deep_research.tools.search.brave import brave_search
 from deep_research.tools.search.serper import serper_search
 from deep_research.tools.search.tavily import tavily_search
 
+_SEARCH_TOOL_MAP = {
+    SearchAPI.TAVILY: tavily_search,
+    SearchAPI.BRAVE: brave_search,
+    SearchAPI.SERPER: serper_search,
+}
+
 
 async def get_search_tools(config: RunnableConfig | None = None) -> list:
     """Return the search tools based on the configured search API."""
     configurable = Configuration.from_runnable_config(config)
-
-    if configurable.search_api == SearchAPI.TAVILY:
-        return [tavily_search]
-    if configurable.search_api == SearchAPI.BRAVE:
-        return [brave_search]
-    if configurable.search_api == SearchAPI.SERPER:
-        return [serper_search]
-
-    return []
+    tool = _SEARCH_TOOL_MAP.get(configurable.search_api)
+    return [tool] if tool else []
 
 
 async def get_all_tools(config: RunnableConfig | None = None) -> list:

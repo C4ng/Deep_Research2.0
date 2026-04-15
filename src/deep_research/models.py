@@ -72,7 +72,7 @@ class ResearchReflection(BaseModel):
         default_factory=list,
         description="Conflicting information between sources",
     )
-    knowledge_state: Literal["insufficient", "partial", "sufficient"] = Field(
+    knowledge_state: Literal["insufficient", "partial", "sufficient", "unavailable"] = Field(
         description="Overall research completeness",
     )
     should_continue: bool = Field(
@@ -104,7 +104,7 @@ class ResearchResult(BaseModel):
     key_findings: list[str] = Field(
         description="Key findings accumulated across all reflection rounds"
     )
-    knowledge_state: Literal["insufficient", "partial", "sufficient"] = Field(
+    knowledge_state: Literal["insufficient", "partial", "sufficient", "unavailable"] = Field(
         description="Final knowledge completeness assessment from the researcher"
     )
     missing_info: list[str] = Field(
@@ -138,6 +138,6 @@ class CoordinatorReflection(BaseModel):
     should_continue: bool = Field(
         description="Whether follow-up research is needed"
     )
-    knowledge_state: Literal["insufficient", "partial", "sufficient"] = Field(
+    knowledge_state: Literal["insufficient", "partial", "sufficient", "unavailable"] = Field(
         description="Overall completeness across all topics"
     )

@@ -22,6 +22,8 @@ from deep_research.nodes.report import final_report_generation
 from deep_research.models import CoordinatorReflection
 from deep_research.nodes.coordinator.reflect import _merge_notes, _format_reflection_guidance
 from deep_research.nodes.coordinator.coordinator import _format_research_results
+from deep_research.helpers.errors import no_search_results
+from deep_research.nodes.researcher.researcher import _execute_tool_safely
 from deep_research.tools.registry import get_all_tools
 
 
@@ -382,10 +384,19 @@ async def test_summarize_skips_short_content(researcher_state):
 
 
 @pytest.mark.asyncio
-async def test_summarize_empty_messages(researcher_state):
-    """No tool results returns empty notes."""
-    result = await summarize_research(researcher_state, config={"configurable": {}})
-    assert result["notes"] == ""
+async def test_summarize_empty_messages_triggers_llm_fallback(researcher_state):
+    """No tool results triggers LLM knowledge fallback."""
+    mock_response = AsyncMock()
+    mock_response.text = "[source: LLM training knowledge]\nFallback content here"
+
+    with patch("deep_research.nodes.researcher.summarizer.configurable_model") as mock_model:
+        mock_model.with_retry.return_value.with_config.return_value.ainvoke = AsyncMock(
+            return_value=mock_response
+        )
+        result = await summarize_research(researcher_state, config={"configurable": {}})
+
+    assert result["notes"] != ""
+    assert "Fallback content" in result["notes"]
 
 
 # --- Accumulator behavior tests (no API calls) ---
@@ -881,7 +892,7 @@ async def test_reflect_skips_llm_on_all_tool_errors(researcher_state):
 
     mock_llm.assert_not_called()
     assert result.goto == "summarize"
-    assert result.update["final_knowledge_state"] == "error"
+    assert result.update["final_knowledge_state"] == "unavailable"
 
 
 # --- Fail-fast: coordinator_reflect early exit ---
@@ -907,3 +918,192 @@ async def test_coordinator_reflect_exits_on_zero_results():
     mock_model.with_structured_output.assert_not_called()
     assert result.goto == "__end__"
     assert result.update["coordinator_iterations"] == 1
+
+
+# --- _execute_tool_safely error handling ---
+
+
+@pytest.mark.asyncio
+async def test_execute_tool_safely_returns_error_string():
+    """Tool raises → returns error string with prefix."""
+    primary = AsyncMock()
+    primary.name = "tavily_search"
+    primary.ainvoke = AsyncMock(side_effect=Exception("quota exceeded"))
+
+    result = await _execute_tool_safely(primary, {"queries": ["test"]}, {})
+    assert result.startswith("Error executing tool:")
+    assert "quota exceeded" in result
+
+
+# --- no_search_results detection ---
+
+
+def test_no_search_results_detects_empty():
+    """All ToolMessages are 'No search results found' → True."""
+    messages = [
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
+        ToolMessage(content="No search results found. Try different search queries.",
+                    name="search", tool_call_id="1"),
+    ]
+    assert no_search_results(messages) is True
+
+
+def test_no_search_results_mixed_error_and_empty():
+    """Mix of errors and empty results → True (none are real data)."""
+    messages = [
+        AIMessage(content="", tool_calls=[{"name": "s", "args": {}, "id": "1"},
+                                          {"name": "s", "args": {}, "id": "2"}]),
+        ToolMessage(content="Error executing tool: quota exceeded", name="s", tool_call_id="1"),
+        ToolMessage(content="No search results found. Try different search queries.",
+                    name="s", tool_call_id="2"),
+    ]
+    assert no_search_results(messages) is True
+
+
+def test_no_search_results_with_real_data():
+    """One ToolMessage has real search data → False."""
+    messages = [
+        AIMessage(content="", tool_calls=[{"name": "s", "args": {}, "id": "1"},
+                                          {"name": "s", "args": {}, "id": "2"}]),
+        ToolMessage(content="No search results found.", name="s", tool_call_id="1"),
+        ToolMessage(content="Search results:\n--- [abc123] Page Title ---",
+                    name="s", tool_call_id="2"),
+    ]
+    assert no_search_results(messages) is False
+
+
+# --- Reflect: early exit on no search results ---
+
+
+@pytest.mark.asyncio
+async def test_reflect_skips_on_no_search_results(researcher_state):
+    """When all results are 'No search results found', reflect exits immediately."""
+    researcher_state["messages"] = [
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
+        ToolMessage(content="No search results found. Try different search queries.",
+                    name="search", tool_call_id="1"),
+    ]
+    researcher_state["research_iterations"] = 0
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection") as mock_llm:
+        result = await reflect(researcher_state, config={"configurable": {}})
+
+    mock_llm.assert_not_called()
+    assert result.goto == "summarize"
+    assert result.update["final_knowledge_state"] == "unavailable"
+
+
+# --- Fallback: summarizer LLM knowledge fallback ---
+
+
+@pytest.mark.asyncio
+async def test_summarizer_llm_fallback_on_no_results():
+    """When all tool results are empty/errors, falls back to LLM knowledge."""
+    state = {
+        "messages": [
+            ToolMessage(content="No search results found. Try different search queries.",
+                        name="search", tool_call_id="1"),
+        ],
+        "research_topic": "quantum computing advances",
+        "research_iterations": 1,
+        "last_reflection": "",
+        "accumulated_findings": [],
+        "accumulated_contradictions": [],
+        "current_gaps": [],
+        "final_knowledge_state": "unavailable",
+        "notes": "",
+    }
+
+    mock_response = AsyncMock()
+    mock_response.text = "[source: LLM training knowledge]\nQuantum computing is a field..."
+
+    with patch("deep_research.nodes.researcher.summarizer.configurable_model") as mock_model:
+        mock_model.with_retry.return_value.with_config.return_value.ainvoke = AsyncMock(
+            return_value=mock_response
+        )
+        result = await summarize_research(state, config={"configurable": {}})
+
+    assert result["notes"] != ""
+    assert "Quantum computing" in result["notes"]
+
+
+@pytest.mark.asyncio
+async def test_summarizer_llm_fallback_on_empty_messages():
+    """When no ToolMessages at all, falls back to LLM knowledge."""
+    state = {
+        "messages": [],
+        "research_topic": "quantum computing advances",
+        "research_iterations": 1,
+        "last_reflection": "",
+        "accumulated_findings": [],
+        "accumulated_contradictions": [],
+        "current_gaps": [],
+        "final_knowledge_state": "unavailable",
+        "notes": "",
+    }
+
+    mock_response = AsyncMock()
+    mock_response.text = "[source: LLM training knowledge]\nQuantum computing..."
+
+    with patch("deep_research.nodes.researcher.summarizer.configurable_model") as mock_model:
+        mock_model.with_retry.return_value.with_config.return_value.ainvoke = AsyncMock(
+            return_value=mock_response
+        )
+        result = await summarize_research(state, config={"configurable": {}})
+
+    assert result["notes"] != ""
+
+
+@pytest.mark.asyncio
+async def test_summarizer_normal_when_real_results_exist():
+    """If real search results exist, use normal compression path (not LLM fallback)."""
+    state = {
+        "messages": [
+            ToolMessage(content="No search results found. Try different search queries.",
+                        name="search", tool_call_id="1"),
+            ToolMessage(content="Search results:\n--- [abc123] Real Page ---\nReal content here",
+                        name="search", tool_call_id="2"),
+        ],
+        "research_topic": "quantum computing advances",
+        "research_iterations": 1,
+        "last_reflection": "",
+        "accumulated_findings": [],
+        "accumulated_contradictions": [],
+        "current_gaps": [],
+        "final_knowledge_state": "unavailable",
+        "notes": "",
+    }
+
+    # Real results exist but short → skip compression, return raw (filtered)
+    result = await summarize_research(state, config={"configurable": {}})
+    assert "Real content here" in result["notes"]
+    assert "No search results found" not in result["notes"]
+
+
+# --- knowledge_state "unavailable" ---
+
+
+def test_research_result_accepts_unavailable():
+    """ResearchResult accepts 'unavailable' as a valid knowledge_state."""
+    result = ResearchResult(
+        topic="test",
+        notes="LLM knowledge notes",
+        key_findings=["finding 1"],
+        knowledge_state="unavailable",
+        missing_info=[],
+        contradictions=[],
+    )
+    assert result.knowledge_state == "unavailable"
+
+
+def test_research_reflection_accepts_unavailable():
+    """ResearchReflection accepts 'unavailable' as a valid knowledge_state."""
+    reflection = ResearchReflection(
+        key_findings=["f1"],
+        missing_info=[],
+        knowledge_state="unavailable",
+        should_continue=False,
+    )
+    assert reflection.knowledge_state == "unavailable"
+
+

@@ -1,6 +1,7 @@
 # Increment 9 — Testing & Fixes
+
 **Goal**: End-to-end testing of the pipeline, capturing issues found and fixes applied.
-**Status**: In progress
+**Status**: Complete
 **Depends on**: Increment 8 (Provider Flexibility)
 
 ---
@@ -35,6 +36,7 @@ terminates the graph run. Next `ainvoke()` starts fresh from `START → clarify`
 The checkpointer saves state, but doesn't save "where we were in the graph."
 
 **Log evidence**:
+
 ```
 brief: Showing brief to user for review
 You: good to go
@@ -67,6 +69,7 @@ def _route_start(state: AgentState) -> str:
 ```
 
 Replace `graph.add_edge(START, "clarify")` with:
+
 ```python
 graph.add_conditional_edges(START, _route_start, ["clarify", "write_brief"])
 ```
@@ -101,7 +104,7 @@ Track the message count and only print messages added since last invocation.
 **Step 4** — Tests
 
 - Verify: resume after brief review goes directly to write_brief (check logs,
-  no "Assessing whether clarification is needed")
+no "Assessing whether clarification is needed")
 - Verify: resume after clarify question still routes to clarify correctly
 - Verify: first run with no prior state routes to clarify as before
 
@@ -117,31 +120,81 @@ Track the message count and only print messages added since last invocation.
 saying "no information was retrieved." It doesn't try alternative search
 providers or fall back to the LLM's own knowledge.
 
-**Two levels of fallback needed**:
+**Solution**: LLM knowledge fallback. When search fails, the researcher's
+summarizer generates notes from LLM training knowledge with provenance
+markers so the final report knows the source.
 
-1. **Search provider failover**: If configured provider fails, try other
-   providers whose API keys are available in env (e.g., `BRAVE_API_KEY`,
-   `SERPER_API_KEY` are set but Brave/Serper aren't the configured provider).
-   The tool registry already knows all providers — it just needs to try
-   alternatives on failure.
+**DuckDuckGo attempted and removed**: DDG was initially added as a free
+search fallback between the paid provider and LLM knowledge. Removed after
+live testing showed it provided no value — most calls returned empty (rate-
+limited under concurrent load), and the few results that came back were
+garbage (dictionary definitions of "solid" instead of solid-state battery
+research). The LLM knowledge fallback produces better content. Simplifies
+the fallback chain to: paid provider fails → LLM knowledge directly.
 
-2. **LLM knowledge fallback**: If ALL search providers fail, the researcher
-   should still produce a report from the LLM's training knowledge rather
-   than returning empty. The model knows about LangGraph and CrewAI — it
-   just wasn't asked because the system assumes search is the only source.
+### Step 1 — LLM knowledge fallback in summarizer ✓
 
-**Proposed fix**:
+**File**: `src/deep_research/nodes/researcher/summarizer.py`
 
-- **Provider failover** (in `tools/registry.py` or `tools/search/base.py`):
-  On tool error, check env for other provider API keys. If found, retry
-  with an alternative provider. This is transparent to the researcher node.
+Summarizer filters junk ToolMessages (`_is_junk()` checks error/no-result
+prefixes). When no usable tool results remain, falls back to
+`_generate_from_llm_knowledge()` which generates notes from LLM training
+data marked with `[source: LLM training knowledge]`.
 
-- **LLM knowledge fallback** (in `reflect.py` or `summarizer.py`):
-  When `final_knowledge_state == "error"`, prompt the summarizer to generate
-  notes from the LLM's own knowledge with a clear disclaimer ("based on
-  training data, not live search results").
+**File**: `src/deep_research/helpers/errors.py` — Added `NO_RESULTS_PREFIX`
+constant and `no_search_results()` detection function.
 
-**Status**: Not started
+**File**: `src/deep_research/nodes/researcher/reflect.py` — Early exit on
+`no_search_results()` alongside existing `all_tools_failed()`, routing to
+summarize with `final_knowledge_state="unavailable"`.
+
+**File**: `src/deep_research/prompts.py` — Added `llm_knowledge_fallback_prompt`
+(writes substantively, marks output with `[source: LLM training knowledge]`).
+Added instruction 8 to `final_report_prompt` for handling LLM-sourced notes
+with provenance.
+
+**Status**: Done
+
+### Step 2 — Fix `knowledge_state` validation error (from live test) ✓
+
+**Found**: Researcher reflect sets `final_knowledge_state="error"` when all
+tools fail. Coordinator `dispatch_research` passes this to `ResearchResult`
+which only accepts `Literal["insufficient", "partial", "sufficient"]` →
+Pydantic validation error crashes the coordinator.
+
+**Fix**: Added `"unavailable"` to knowledge_state Literal in
+`ResearchReflection`, `ResearchResult`, and `CoordinatorReflection`.
+Changed early-exit path to set `"unavailable"` instead of `"error"`.
+Updated prompts to document the new value. Coordinator reflection now
+exits immediately when `knowledge_state == "unavailable"` (retrying
+search when search is unavailable is pointless).
+
+**Status**: Done
+
+### Step 3 — Tests ✓
+
+**File**: `tests/test_nodes.py`
+
+- 3 `no_search_results` detection tests (all errors, mixed, no messages)
+- 1 reflect early exit on no results test
+- 3 summarizer LLM fallback tests (empty messages, error state, junk
+  filtering)
+- 1 `_execute_tool_safely` error handling test
+- 2 `knowledge_state` "unavailable" acceptance tests
+
+**Status**: Done — 52 tests passing
+
+### Files changed
+
+| File | Change |
+|------|--------|
+| `src/deep_research/nodes/researcher/summarizer.py` | LLM knowledge fallback, `_is_junk()` filter |
+| `src/deep_research/nodes/researcher/reflect.py` | `no_search_results()` early exit, `"unavailable"` state |
+| `src/deep_research/nodes/coordinator/reflect.py` | Exit on `knowledge_state == "unavailable"` |
+| `src/deep_research/helpers/errors.py` | `NO_RESULTS_PREFIX`, `no_search_results()` |
+| `src/deep_research/prompts.py` | `llm_knowledge_fallback_prompt`, final report instruction 8, knowledge_state docs |
+| `src/deep_research/models.py` | Add `"unavailable"` to Literal types |
+| `tests/test_nodes.py` | 11 unit tests |
 
 ---
 
@@ -175,6 +228,7 @@ way depending on the LLM run.
 handles both simple and complex queries — a simple query just gets fewer subtopics.
 
 **Changes**:
+
 - `models.py` — removed `is_simple` field from `ResearchBrief`
 - `prompts.py` — replaced simplicity assessment with "Do NOT include subtopics"
 - `state.py` — removed `is_simple` from `AgentState`
@@ -187,25 +241,4 @@ handles both simple and complex queries — a simple query just gets fewer subto
 
 **Status**: Fixed
 
----
 
-## Files changed (all issues)
-
-| File | Issue | Change |
-|------|-------|--------|
-| `src/deep_research/helpers/errors.py` | #1 | **NEW** — `TOOL_ERROR_PREFIX`, `all_tools_failed()` |
-| `src/deep_research/nodes/researcher/researcher.py` | #1 | Import `TOOL_ERROR_PREFIX` from helpers |
-| `src/deep_research/nodes/researcher/reflect.py` | #1 | Early exit via `all_tools_failed()` |
-| `src/deep_research/nodes/coordinator/coordinator.py` | #1 | Return `latest_round_result_count` |
-| `src/deep_research/nodes/coordinator/reflect.py` | #1 | Early exit on zero results |
-| `src/deep_research/state.py` | #1, #5 | Add `latest_round_result_count`; remove `is_simple` |
-| `src/deep_research/graph/graph.py` | #2, #5 | `_route_start()` conditional routing; remove `researcher` node |
-| `src/deep_research/nodes/brief.py` | #4, #5 | Review framing; remove `is_simple` routing, always coordinator |
-| `src/deep_research/models.py` | #5 | Remove `is_simple` from `ResearchBrief` |
-| `src/deep_research/prompts.py` | #5 | Remove simplicity assessment section |
-| `scripts/run.py` | #2 | Only print new messages on resume |
-| `scripts/compare_serper.py` | #5 | Remove `is_simple` from state |
-| `scripts/compare_brave.py` | #5 | Remove `is_simple` from state |
-| `scripts/test_provider_swap.py` | #5 | Remove `brief.is_simple` print |
-| `tests/test_nodes.py` | #1, #5 | 7 fail-fast tests; remove/rewrite brief routing tests |
-| `tests/test_integration.py` | #5 | Remove `is_simple` from `INITIAL_STATE` |

@@ -158,7 +158,7 @@ async def coordinator_reflect(
 
     should_stop = (
         not reflection.should_continue
-        or reflection.knowledge_state == "sufficient"
+        or reflection.knowledge_state in ("sufficient", "unavailable")
         or iteration >= configurable.max_coordinator_iterations
     )
 

@@ -152,8 +152,17 @@ Today's date is {date}.
 6. Use the coverage/knowledge_state signals in research_metadata to calibrate
    confidence in the main body. Topics with "partial" coverage should use
    hedging language. Topics with "sufficient" coverage can be more assertive.
+   Topics with "unavailable" coverage relied on LLM training knowledge —
+   treat them the same as instruction 8 (note provenance once).
 7. Do NOT write a Sources or References section — it will be added
    programmatically after generation.
+8. Some findings may be marked with "[source: LLM training knowledge]".
+   These sections were generated from the model's training data because live
+   search was unavailable for that topic. Use this information normally in the
+   report, but add a brief note in the relevant section (e.g., "Based on
+   available knowledge as of [training cutoff]") so the reader knows the
+   provenance. Do not apologize or over-explain — just note it once per
+   affected section.
 </instructions>
 
 Do not refer to yourself or comment on the writing process."""
@@ -209,6 +218,8 @@ knowledge_state:
 - "partial": Topic is partially answered but major angles are missing.
 - "sufficient": The topic is well-covered at the level of detail it asks for.
   Minor niche details missing does NOT prevent "sufficient."
+- "unavailable": Do NOT use this value — it is set by code when search tools
+  are entirely unavailable. The LLM should only output the three values above.
 
 should_continue:
 - false: The topic is reasonably well-covered; OR last searches returned mostly
@@ -373,7 +384,30 @@ knowledge_state:
 - "partial": Most questions answered but a significant angle is missing.
 - "sufficient": The brief's questions are well-covered at the level of detail
   they ask for. Minor gaps do NOT prevent "sufficient."
+- "unavailable": Search tools were unavailable for one or more topics —
+  results are from LLM training knowledge only.
 </field_criteria>"""
+
+
+llm_knowledge_fallback_prompt = """\
+You are a research assistant writing about a topic using your training knowledge. \
+Live search was not available for this topic.
+
+<research_topic>
+{research_topic}
+</research_topic>
+
+Today's date is {date}.
+
+<instructions>
+1. Write substantively — share relevant facts, data, comparisons, and context.
+2. Be explicit about uncertainty — hedge claims you are not confident about.
+3. Do NOT invent citations or source IDs.
+4. Organize by subtopic with clear structure.
+5. Begin with exactly this line:
+   [source: LLM training knowledge — not from live search]
+   Then write the content below it.
+</instructions>"""
 
 
 summarize_webpage_prompt = """\
