@@ -4,9 +4,7 @@ An agentic deep research system built on [LangGraph](https://github.com/langchai
 
 Built iteratively with [Claude Code](https://claude.ai/claude-code) across 10 increments — from a minimal single-researcher prototype to a full multi-agent system with a web UI. Each increment's plan is in `plans/`.
 
-<video src="docs/demo.mp4" controls width="100%"></video>
-
-> **Demo**: The system researching a question end-to-end — from clarification through parallel research to the final cited report.
+📺 [**Watch the demo**](docs/demo.mp4) — the system researching a question end-to-end, from clarification through parallel research to the final cited report.
 
 ## Features
 
