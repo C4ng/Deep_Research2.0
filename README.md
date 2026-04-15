@@ -33,6 +33,12 @@ Built iteratively with [Claude Code](https://claude.ai/claude-code) across 10 in
 ```bash
 git clone https://github.com/C4ng/Deep_Research2.0.git
 cd Deep_Research2.0
+
+# Create and activate a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install core package
 pip install -e .
 
 # For additional LLM providers
@@ -40,7 +46,7 @@ pip install -e ".[all-providers]"
 
 # For the web UI
 pip install -e ".[web]"
-cd web/frontend && npm install
+cd web/frontend && npm install && cd ../..
 ```
 
 ### Environment

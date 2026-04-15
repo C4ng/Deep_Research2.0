@@ -17,10 +17,13 @@ def main():
 
     try:
         # Start FastAPI backend
+        env = os.environ.copy()
+        env["PYTHONPATH"] = ROOT + os.pathsep + env.get("PYTHONPATH", "")
         backend = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "web.api:app",
              "--reload", "--port", "8000"],
             cwd=ROOT,
+            env=env,
         )
         procs.append(backend)
 
