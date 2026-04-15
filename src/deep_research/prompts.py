@@ -229,6 +229,12 @@ missing_info:
   but stay at the topic's level of detail — not niche sub-questions.
 
 contradictions:
+- Output the COMPLETE current list of all known contradictions — not just
+  new ones from this round. This field overwrites the previous round's list.
+- Each entry represents one disputed matter. There must be at most one entry
+  per disputed matter — consolidate all sources and evidence for the same
+  disagreement into a single entry.
+- Remove contradictions resolved by new evidence.
 - Cite which sources disagree using their [source_id] tags
   (e.g., "[a1b2c3d4] says X, [e5f6a7b8] says Y").
 

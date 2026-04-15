@@ -186,18 +186,18 @@ def test_format_reflection_with_accumulated_no_new():
     assert "Still missing X" in result
 
 
-# --- Contradiction dedup tests (no API calls) ---
+# --- Contradiction overwrite tests (no API calls) ---
 
 
 @pytest.mark.asyncio
-async def test_contradiction_dedup_exact(researcher_state):
-    """Exact duplicate contradiction is not re-appended."""
-    researcher_state["accumulated_contradictions"] = ["Source A says X, Source B says Y"]
+async def test_contradictions_overwrite_replaces_previous(researcher_state):
+    """LLM's contradiction list overwrites the previous round's list entirely."""
+    researcher_state["accumulated_contradictions"] = ["Old contradiction A", "Old contradiction B"]
 
     mock_reflection = ResearchReflection(
         key_findings=["finding"],
         missing_info=[],
-        contradictions=["Source A says X, Source B says Y"],  # same as existing
+        contradictions=["Merged contradiction AB"],  # LLM consolidated
         knowledge_state="sufficient",
         should_continue=False,
     )
@@ -205,19 +205,38 @@ async def test_contradiction_dedup_exact(researcher_state):
     with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
         result = await reflect(researcher_state, config={"configurable": {}})
 
-    # Deduped: empty list sent to append reducer
+    # Overwrite: only the LLM's output, no leftover from prior state
+    assert result.update["accumulated_contradictions"] == ["Merged contradiction AB"]
+
+
+@pytest.mark.asyncio
+async def test_contradictions_overwrite_can_clear(researcher_state):
+    """LLM can resolve contradictions by returning an empty list."""
+    researcher_state["accumulated_contradictions"] = ["Previously unresolved conflict"]
+
+    mock_reflection = ResearchReflection(
+        key_findings=["finding that resolves conflict"],
+        missing_info=[],
+        contradictions=[],  # resolved — nothing left
+        knowledge_state="sufficient",
+        should_continue=False,
+    )
+
+    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
+        result = await reflect(researcher_state, config={"configurable": {}})
+
     assert result.update["accumulated_contradictions"] == []
 
 
 @pytest.mark.asyncio
-async def test_contradiction_dedup_case_insensitive(researcher_state):
-    """Case-insensitive duplicate is deduped."""
-    researcher_state["accumulated_contradictions"] = ["Market size conflicts between sources"]
+async def test_contradictions_overwrite_passes_through(researcher_state):
+    """LLM's full contradiction list is passed through without filtering."""
+    researcher_state["accumulated_contradictions"] = []
 
     mock_reflection = ResearchReflection(
         key_findings=["finding"],
         missing_info=[],
-        contradictions=["market size conflicts between sources"],  # different case
+        contradictions=["Contradiction A", "Contradiction B"],
         knowledge_state="sufficient",
         should_continue=False,
     )
@@ -225,26 +244,7 @@ async def test_contradiction_dedup_case_insensitive(researcher_state):
     with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
         result = await reflect(researcher_state, config={"configurable": {}})
 
-    assert result.update["accumulated_contradictions"] == []
-
-
-@pytest.mark.asyncio
-async def test_contradiction_dedup_preserves_new(researcher_state):
-    """New contradictions are appended; only duplicates are filtered."""
-    researcher_state["accumulated_contradictions"] = ["Old contradiction"]
-
-    mock_reflection = ResearchReflection(
-        key_findings=["finding"],
-        missing_info=[],
-        contradictions=["Old contradiction", "Brand new contradiction"],
-        knowledge_state="sufficient",
-        should_continue=False,
-    )
-
-    with patch("deep_research.nodes.researcher.reflect._run_reflection", return_value=mock_reflection):
-        result = await reflect(researcher_state, config={"configurable": {}})
-
-    assert result.update["accumulated_contradictions"] == ["Brand new contradiction"]
+    assert result.update["accumulated_contradictions"] == ["Contradiction A", "Contradiction B"]
 
 
 # --- Dead-end detection tests (no API calls) ---

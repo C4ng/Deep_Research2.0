@@ -55,12 +55,12 @@ class ResearcherState(TypedDict):
     last_reflection: str
     """Formatted reflection guidance for the next round (overwrite)."""
 
-    # Accumulated across reflection rounds (append reducers)
+    # Accumulated across reflection rounds
     accumulated_findings: Annotated[list[str], operator.add]
-    """Key findings accumulated across all reflection rounds."""
+    """Key findings accumulated across all reflection rounds (append reducer)."""
 
-    accumulated_contradictions: Annotated[list[str], operator.add]
-    """Contradictions discovered across all reflection rounds."""
+    accumulated_contradictions: list[str]
+    """Contradictions — full canonical list, overwritten each round by the LLM."""
 
     current_gaps: list[str]
     """Current gaps remaining — overwritten each round (latest assessment)."""

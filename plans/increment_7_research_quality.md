@@ -1,7 +1,7 @@
 # Increment 7 — Research Quality + Report Polish
 
 **Goal**: Dead-end detection, contradiction dedup, hallucinated citation marking, and report structure fixes.
-**Status**: Steps 0–3 implemented, Step 4 observations complete, contradiction redesign in progress
+**Status**: Complete — all steps implemented and integration-tested
 **Depends on**: Increment 6 (Final Report Redesign) — report_metadata, citation resolution
 
 ## Overview
@@ -163,7 +163,7 @@ if dead_end and not should_stop:
 
 ---
 
-### Step 1 — Contradiction management: LLM-managed overwrite 🔄
+### Step 1 — Contradiction management: LLM-managed overwrite ✅
 
 **Files**: `src/deep_research/state.py`, `src/deep_research/nodes/researcher/reflect.py`, `src/deep_research/prompts.py`
 
@@ -191,23 +191,43 @@ accumulation_update = {
 }
 ```
 
-**prompts.py** — Updated `contradictions` field criteria to instruct full-list output:
+**prompts.py** — Updated `contradictions` field criteria with "one entry per
+disputed matter" framing:
 ```
 contradictions:
 - Output the COMPLETE current list of all known contradictions — not just
   new ones from this round. This field overwrites the previous round's list.
-- Merge, deduplicate, or remove contradictions that have been resolved by
-  new evidence.
+- Each entry represents one disputed matter. There must be at most one entry
+  per disputed matter — consolidate all sources and evidence for the same
+  disagreement into a single entry.
+- Remove contradictions resolved by new evidence.
 ```
 
 The LLM already sees prior contradictions via `_format_accumulated_context()`
 ("Previously identified contradictions:"), so it has full context to produce
 an updated canonical list.
 
+**Integration testing observations**:
+- Overwrite mechanism works correctly — each round outputs a full list, not a delta.
+- Initial prompt ("merge, deduplicate, combine") was too procedural — the LLM
+  treated merging as optional and near-duplicates sometimes survived.
+- Reframed as a structural constraint ("one entry per disputed matter") — this
+  consistently produces clean consolidated entries. Seeded test with 2 near-
+  duplicates: consolidated into 1 entry with all sources merged.
+- Across rounds, contradictions are enriched with new sources (e.g., round 2 adds
+  HBR overwork data to the productivity contradiction), and entries that lack new
+  evidence are preserved unchanged ("no new information found to resolve this").
+
 **Tests** (unit):
 - `test_contradictions_overwrite_replaces_previous` — LLM consolidates prior entries
 - `test_contradictions_overwrite_can_clear` — LLM resolves all → empty list
 - `test_contradictions_overwrite_passes_through` — new contradictions pass through unfiltered
+
+**Tests** (integration — `tests/test_contradiction_overwrite.py`):
+- `test_contradiction_overwrite_across_rounds` — natural multi-round research,
+  tracks contradiction evolution via streaming
+- `test_contradiction_overwrite_with_seeded_state` — pre-seeds near-duplicate
+  contradictions, verifies LLM merges them into one entry per disputed matter
 
 ---
 
@@ -310,20 +330,33 @@ Ran full end-to-end test with complex query (intermittent fasting health effects
 | `src/deep_research/helpers/source_store.py` | `[unverified]` for unknown citations |
 | `src/deep_research/prompts.py` | `prior_gaps_filled` field criteria, contradiction overwrite instruction, report visual hierarchy + open questions |
 | `tests/test_nodes.py` | Dead-end detection + contradiction overwrite unit tests |
+| `tests/test_contradiction_overwrite.py` | Integration tests for contradiction overwrite across rounds + seeded near-duplicates |
 | `tests/test_source_store.py` | Update/add `[unverified]` tests |
 
-## Deferred (add only if future testing shows need)
+## Not incorporated — adequate LLM behavior observed
 
-Integration testing showed the LLM handles these adequately without explicit prompting:
+Integration and contradiction overwrite testing showed the LLM handles these
+through general reasoning. No code or prompt additions needed.
 
-- ~~**Semantic contradiction dedup**~~ — resolved by switching to LLM-managed overwrite
-- **Prompt: contradiction resolution in next_queries** — LLM naturally includes
-  resolution queries when it sees contradictions in context
-- **Prompt: multi-source corroboration** — LLM notes agreement/disagreement
-  when it sees multiple sources on the same topic
-- **Prompt: source authority** — LLM sees full URLs and correctly weights
-  .gov/.edu sources in contradiction analysis
-- **Prompt: coordinator low-confidence** — coordinator reasons about
-  knowledge_state adequately
-- **URL authority tag in `_format_results`** — not needed, LLM already sees URLs
-- **Coordinator topic reassignment** — dispatch same topic with different angle
+- ~~**Semantic contradiction dedup**~~ — resolved by switching to LLM-managed
+  overwrite with "one entry per disputed matter" constraint.
+- **Multi-source corroboration** — the LLM naturally groups agreeing sources on
+  each side of a contradiction (e.g., "Stanford, Microsoft, ActivTrak say X,
+  while SIEPR says Y") without explicit prompting. Report `### Conflicting
+  Evidence` sections already analyze why sources differ.
+- **Source authority** — the LLM distinguishes source credibility implicitly:
+  references researchers by name ("Stanford economist Nick Bloom"), distinguishes
+  "SIEPR working paper" from "ActivTrak reports", and notes study design
+  differences (surveys vs controlled studies). It sees full URLs in search
+  results and weights .gov/.edu appropriately.
+- **Coordinator low-confidence** — coordinator reflection already routes on
+  `knowledge_state` (insufficient/partial/sufficient) and `coverage_gaps`.
+  Integration testing showed it dispatches follow-up researchers for gaps and
+  stops when coverage is sufficient. Dead-end detection handles researcher level.
+- **URL authority tag in `_format_results`** — redundant. The LLM already sees
+  full URLs in formatted search results and uses domain credibility in its
+  reasoning.
+- **Contradiction resolution in next_queries** — the LLM naturally includes
+  resolution queries when it sees contradictions in context.
+- **Coordinator topic reassignment** — dispatch same topic with different angle.
+  Not observed as needed; dead-end reformulation handles the researcher level.
