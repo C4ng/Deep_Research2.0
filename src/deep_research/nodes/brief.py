@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 def _format_brief(brief: ResearchBrief) -> str:
     """Format a ResearchBrief as a string for state and display."""
-    return f"Title: {brief.title}\n\n{brief.research_question}\n\nApproach: {brief.approach}"
+    return f"**{brief.title}**\n\n{brief.research_question}\n\n**Approach:**\n\n{brief.approach}"
 
 
 async def write_research_brief(
