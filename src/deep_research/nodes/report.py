@@ -8,7 +8,7 @@ from langchain_core.runnables import RunnableConfig
 from langsmith.run_helpers import get_current_run_tree
 
 from deep_research.configuration import Configuration
-from deep_research.graph.model import configurable_model
+from deep_research.graph.model import build_model_config, configurable_model
 from deep_research.helpers.source_store import (
     build_source_map,
     format_source_map_for_prompt,
@@ -29,13 +29,12 @@ async def final_report_generation(state: AgentState, config: RunnableConfig) -> 
     """
     configurable = Configuration.from_runnable_config(config)
 
-    model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "temperature": configurable.research_model_temperature,
-    }
-    if configurable.research_model_thinking_budget is not None:
-        model_config["thinking_budget"] = configurable.research_model_thinking_budget
+    model_config = build_model_config(
+        model=configurable.research_model,
+        max_tokens=configurable.research_model_max_tokens,
+        temperature=configurable.research_model_temperature,
+        thinking_budget=configurable.research_model_thinking_budget,
+    )
 
     model = (
         configurable_model

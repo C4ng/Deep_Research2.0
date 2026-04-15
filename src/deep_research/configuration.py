@@ -54,10 +54,6 @@ class Configuration(BaseModel):
             "model — reflection is assessment, not deep reasoning."
         ),
     )
-    # TODO: Add a model config resolver that builds provider-aware config dicts.
-    # Currently thinking_budget is conditionally passed (only when not None),
-    # but a proper resolver would handle all provider-specific params in one place
-    # when we add OpenAI/Anthropic support.
     summarization_model: str = Field(
         default="google_genai:gemini-2.5-flash-lite",
         description="Model for summarizing webpage content (cheap, mechanical extraction)",

@@ -14,7 +14,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from deep_research.configuration import Configuration
-from deep_research.graph.model import configurable_model
+from deep_research.graph.model import build_model_config, configurable_model
 from deep_research.models import CoordinatorReflection, ResearchResult
 from deep_research.nodes.coordinator.coordinator import _format_research_results
 from deep_research.prompts import coordinator_reflection_prompt
@@ -105,13 +105,12 @@ async def coordinator_reflect(
     results = state.get("research_results", [])
     formatted_results = _format_research_results(results)
 
-    model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "temperature": configurable.research_model_temperature,
-    }
-    if configurable.reflection_thinking_budget is not None:
-        model_config["thinking_budget"] = configurable.reflection_thinking_budget
+    model_config = build_model_config(
+        model=configurable.research_model,
+        max_tokens=configurable.research_model_max_tokens,
+        temperature=configurable.research_model_temperature,
+        thinking_budget=configurable.reflection_thinking_budget,
+    )
 
     model = (
         configurable_model

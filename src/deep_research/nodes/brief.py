@@ -17,7 +17,7 @@ from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command
 
 from deep_research.configuration import Configuration
-from deep_research.graph.model import configurable_model
+from deep_research.graph.model import build_model_config, configurable_model
 from deep_research.models import ResearchBrief
 from deep_research.prompts import research_brief_prompt
 from deep_research.state import AgentState
@@ -43,13 +43,12 @@ async def write_research_brief(
     """
     configurable = Configuration.from_runnable_config(config)
 
-    model_config = {
-        "model": configurable.research_model,
-        "max_tokens": configurable.research_model_max_tokens,
-        "temperature": configurable.research_model_temperature,
-    }
-    if configurable.research_model_thinking_budget is not None:
-        model_config["thinking_budget"] = configurable.research_model_thinking_budget
+    model_config = build_model_config(
+        model=configurable.research_model,
+        max_tokens=configurable.research_model_max_tokens,
+        temperature=configurable.research_model_temperature,
+        thinking_budget=configurable.research_model_thinking_budget,
+    )
 
     model = (
         configurable_model

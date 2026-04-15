@@ -14,7 +14,7 @@ from langchain_core.messages import HumanMessage
 from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration
-from deep_research.graph.model import configurable_model
+from deep_research.graph.model import build_model_config, configurable_model
 from deep_research.helpers.source_store import (
     generate_source_id,
     get_sources_dir,
@@ -65,13 +65,12 @@ class BaseSearchTool(ABC):
         from deep_research.prompts import summarize_webpage_prompt
 
         configurable = Configuration.from_runnable_config(self._config)
-        model_config = {
-            "model": configurable.summarization_model,
-            "max_tokens": configurable.summarization_model_max_tokens,
-            "temperature": configurable.summarization_model_temperature,
-        }
-        if configurable.summarization_model_thinking_budget is not None:
-            model_config["thinking_budget"] = configurable.summarization_model_thinking_budget
+        model_config = build_model_config(
+            model=configurable.summarization_model,
+            max_tokens=configurable.summarization_model_max_tokens,
+            temperature=configurable.summarization_model_temperature,
+            thinking_budget=configurable.summarization_model_thinking_budget,
+        )
 
         summary_model = (
             configurable_model

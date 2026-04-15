@@ -11,37 +11,38 @@ happening during research.
 Three deliverables, scoped to what adds real value:
 
 1. **Second search provider** — add one provider (e.g., Brave) to prove
-   `BaseSearchTool` works and handle the raw_content gap (not all providers
+  `BaseSearchTool` works and handle the raw_content gap (not all providers
    return full page text).
 2. **Model API key routing** — `init_chat_model` already handles multi-provider
-   models. The gap is routing the right API key per provider from config/env.
+  models. The gap is routing the right API key per provider from config/env.
 3. **Progress streaming interface** — use `astream(stream_mode="updates")` to
-   surface research progress: brief ready, researchers dispatched, searches
+  surface research progress: brief ready, researchers dispatched, searches
    happening, reflections, report writing.
 
 **What we're NOT doing** (scoped out with rationale):
+
 - **Provider-native search (Anthropic, OpenAI, Gemini)** — conflicts with our
-  pipeline architecture. Our source store, `[source_id]` tagging, citation
-  resolution, `[unverified]` marking, and all prompt field criteria depend on
-  controlling search results. Native search bypasses all of this — the model
-  consumes results internally. Would require a fundamentally different
-  abstraction (response post-processor), not a `BaseSearchTool` subclass.
-  See "Research: Search Provider Selection" above for full analysis.
+pipeline architecture. Our source store, `[source_id]` tagging, citation
+resolution, `[unverified]` marking, and all prompt field criteria depend on
+controlling search results. Native search bypasses all of this — the model
+consumes results internally. Would require a fundamentally different
+abstraction (response post-processor), not a `BaseSearchTool` subclass.
+See "Research: Search Provider Selection" above for full analysis.
 - ~~**Serper (Google Search API)**~~ — originally scoped out as snippet-only,
-  but added in Step 1 to further prove `BaseSearchTool` abstraction with a
-  minimal provider (snippet-only, no raw_content).
+but added in Step 1 to further prove `BaseSearchTool` abstraction with a
+minimal provider (snippet-only, no raw_content).
 - **Two-tier notes (raw + compressed)** — no use case. LangSmith traces already
-  show full messages for debugging. Storing raw notes separately adds state
-  bloat with no consumer.
+show full messages for debugging. Storing raw notes separately adds state
+bloat with no consumer.
 - **Token-limit retry with progressive truncation** — speculative. We haven't
-  hit token limits: summarizer truncates raw content at 50k chars, reflection
-  loop limits rounds to 3. Add reactively if we observe failures, not
-  preemptively. The reference implementation's hardcoded `MODEL_TOKEN_LIMITS`
-  dict goes stale immediately and requires manual maintenance per model.
+hit token limits: summarizer truncates raw content at 50k chars, reflection
+loop limits rounds to 3. Add reactively if we observe failures, not
+preemptively. The reference implementation's hardcoded `MODEL_TOKEN_LIMITS`
+dict goes stale immediately and requires manual maintenance per model.
 - **Full CLI (`cli.py`)** — the progress streaming interface is the real user
-  need. A traditional CLI wrapper around `graph.ainvoke()` adds little value
-  over a Python script. If deployment is needed, LangGraph Platform
-  (`langgraph.json`) is the standard path.
+need. A traditional CLI wrapper around `graph.ainvoke()` adds little value
+over a Python script. If deployment is needed, LangGraph Platform
+(`langgraph.json`) is the standard path.
 
 ---
 
@@ -51,44 +52,49 @@ Three deliverables, scoped to what adds real value:
 
 **External search APIs** (fit our pipeline — return raw results we control):
 
-| Provider | Content per result | raw_content? | Python client |
-|----------|-------------------|-------------|---------------|
-| **Tavily** (current) | snippet + full page text | Yes (`include_raw_content=True`) | `tavily-python` (direct) |
-| **Brave Web Search** | snippet (`description`) + up to 5 `extra_snippets` | No — excerpts only | `brave-search-python-client` or raw HTTP |
-| **Serper** (Google) | Google snippet only | No | `langchain-community` only |
+
+| Provider             | Content per result                                 | raw_content?                     | Python client                            |
+| -------------------- | -------------------------------------------------- | -------------------------------- | ---------------------------------------- |
+| **Tavily** (current) | snippet + full page text                           | Yes (`include_raw_content=True`) | `tavily-python` (direct)                 |
+| **Brave Web Search** | snippet (`description`) + up to 5 `extra_snippets` | No — excerpts only               | `brave-search-python-client` or raw HTTP |
+| **Serper** (Google)  | Google snippet only                                | No                               | `langchain-community` only               |
+
 
 **Provider-native search** (model searches internally — evaluated and rejected):
 
-| Provider | Tool | How it works |
-|----------|------|-------------|
-| Anthropic | `web_search_20250305` | Claude searches server-side, results in response |
-| OpenAI | `web_search_preview` | GPT searches server-side, results in `tool_outputs` |
+
+| Provider      | Tool                       | How it works                                        |
+| ------------- | -------------------------- | --------------------------------------------------- |
+| Anthropic     | `web_search_20250305`      | Claude searches server-side, results in response    |
+| OpenAI        | `web_search_preview`       | GPT searches server-side, results in `tool_outputs` |
 | Google Gemini | `GoogleSearch()` grounding | Gemini searches Google, returns `groundingMetadata` |
+
 
 ### Why Brave over Serper
 
 - Brave returns `description` + up to 5 `extra_snippets` per result — ~6 excerpts
-  total. Serper returns only Google's single snippet. More content = better input
-  for our summarization pipeline.
+total. Serper returns only Google's single snippet. More content = better input
+for our summarization pipeline.
 - Brave has a standalone Python client (`brave-search-python-client`) and raw HTTP
-  API. Serper only has `langchain-community` wrappers (we don't use that package).
+API. Serper only has `langchain-community` wrappers (we don't use that package).
 - Both lack full page text (`raw_content`), but Brave's extra_snippets partially
-  compensate.
+compensate.
 
 ### Why not provider-native search
 
 Native search conflicts with our architecture:
+
 - **No source IDs**: our pipeline generates `[source_id]` tags, writes to source
-  store, and resolves citations in the final report. Native search bypasses all
-  of this — the model consumes results internally, we never see raw results.
+store, and resolves citations in the final report. Native search bypasses all
+of this — the model consumes results internally, we never see raw results.
 - **Prompt dependencies**: `researcher_reflection_prompt` expects `[source_id]`
-  tagged findings; `compress_research_prompt` preserves `[source_id]` tags;
-  `final_report_prompt` cites via `[source_id]`. All built around our pipeline.
+tagged findings; `compress_research_prompt` preserves `[source_id]` tags;
+`final_report_prompt` cites via `[source_id]`. All built around our pipeline.
 - **No control**: we can't enforce `max_searches_per_round`, can't dedup across
-  rounds, can't summarize differently. The model decides everything.
+rounds, can't summarize differently. The model decides everything.
 - **Would require a different abstraction**: not a `BaseSearchTool` subclass but a
-  response post-processor that reverse-engineers source IDs from grounding metadata.
-  Fragile and fights the architecture.
+response post-processor that reverse-engineers source IDs from grounding metadata.
+Fragile and fights the architecture.
 
 Native search could be a future increment with a separate design if needed.
 
@@ -113,13 +119,15 @@ as content).
 
 ## Decisions
 
-| Decision | Choice | Rationale |
-|----------|--------|-----------|
-| Which search provider | **Brave** | Best content depth after Tavily (extra_snippets), standalone Python client, no langchain-community dependency. Serper is snippet-only. Native search conflicts with our pipeline architecture. |
-| raw_content gap | **Concatenate extra_snippets** | Combine `description` + `extra_snippets` → treat as `raw_content` for summarization. Falls back to snippet-only when extra_snippets unavailable. |
-| API key routing | **Env var convention + config fallback** | Follow LangChain convention: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` from env. Search API keys in Configuration. |
-| Progress interface | **`astream` + event mapper** | `astream(stream_mode="updates")` emits `{node_name: update}` per node completion. Map node names to user-friendly progress messages. |
-| Deployment | **`langgraph.json` for LangGraph Platform** | Standard LangGraph deployment format. Enables LangGraph Studio web UI for free. |
+
+| Decision              | Choice                                      | Rationale                                                                                                                                                                                      |
+| --------------------- | ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Which search provider | **Brave**                                   | Best content depth after Tavily (extra_snippets), standalone Python client, no langchain-community dependency. Serper is snippet-only. Native search conflicts with our pipeline architecture. |
+| raw_content gap       | **Concatenate extra_snippets**              | Combine `description` + `extra_snippets` → treat as `raw_content` for summarization. Falls back to snippet-only when extra_snippets unavailable.                                               |
+| API key routing       | **Env var convention + config fallback**    | Follow LangChain convention: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY` from env. Search API keys in Configuration.                                                               |
+| Progress interface    | `**astream` + event mapper**                | `astream(stream_mode="updates")` emits `{node_name: update}` per node completion. Map node names to user-friendly progress messages.                                                           |
+| Deployment            | `**langgraph.json` for LangGraph Platform** | Standard LangGraph deployment format. Enables LangGraph Studio web UI for free.                                                                                                                |
+
 
 ---
 
@@ -139,13 +147,14 @@ BraveSearchTool(BaseSearchTool)   — new (raw HTTP or brave-search-python-clien
 ```
 
 New provider only implements `search()`. The `raw_content` strategy per provider:
+
 - **Tavily**: `include_raw_content=True` → full page text → summarization LLM
 - **Brave**: `description` + `extra_snippets` concatenated → ~6 excerpts →
-  summarization LLM condenses into structured summary. When `extra_snippets`
-  unavailable, `raw_content=None` → skip summarization, use snippet directly.
+summarization LLM condenses into structured summary. When `extra_snippets`
+unavailable, `raw_content=None` → skip summarization, use snippet directly.
 - **Fallback** (base class, no changes needed): when `raw_content` is None,
-  `search_and_summarize` skips the summarization LLM call and uses
-  `result.content` (snippet) directly.
+`search_and_summarize` skips the summarization LLM call and uses
+`result.content` (snippet) directly.
 
 ### Progress Streaming
 
@@ -165,6 +174,7 @@ For subgraph visibility, use astream_events(version="v2") which emits:
 ```
 
 Progress event types to surface:
+
 - `brief_ready`: research plan title and approach
 - `researcher_dispatched`: topic being researched
 - `search_executing`: queries being run
@@ -198,6 +208,7 @@ brave_api_key: str = Field(default="", ...)
 **Provider decision**: Brave (settled — see Research section above).
 
 **Verified API response format** (from live test call):
+
 ```json
 {
   "web": {
@@ -217,6 +228,7 @@ brave_api_key: str = Field(default="", ...)
   }
 }
 ```
+
 Note: `description` may contain `<strong>` HTML tags. `extra_snippets` returns
 up to 4-5 entries per result (not always 5). Some snippets are navigation/
 boilerplate — the summarization LLM will filter those naturally.
@@ -315,6 +327,7 @@ async def brave_search(
 #### 0d. Configuration: add `brave_api_key` + `SearchAPI.BRAVE`
 
 In `configuration.py`:
+
 ```python
 class SearchAPI(Enum):
     TAVILY = "tavily"
@@ -334,6 +347,7 @@ be picked up automatically.
 #### 0e. Registry: route by SearchAPI enum
 
 In `registry.py`:
+
 ```python
 from deep_research.tools.search.brave import brave_search
 
@@ -349,17 +363,19 @@ async def get_search_tools(config: RunnableConfig | None = None) -> list:
 #### 0f. Tests
 
 **Unit** (`tests/test_search_providers.py`):
+
 - `test_brave_search_maps_results` — mock `httpx.AsyncClient.get` with a
-  canned Brave response → verify `SearchResult` fields (url, title, content,
-  raw_content with concatenated snippets)
+canned Brave response → verify `SearchResult` fields (url, title, content,
+raw_content with concatenated snippets)
 - `test_brave_search_strips_html` — description with `<strong>` tags →
-  content has clean text
+content has clean text
 - `test_brave_search_dedup_urls` — two queries returning overlapping URLs →
-  deduplicated by URL
+deduplicated by URL
 - `test_brave_search_no_extra_snippets` — result without `extra_snippets` →
-  `raw_content=None`, `content` = description
+`raw_content=None`, `content` = description
 
 **Integration** (`tests/test_brave_search.py`, `@pytest.mark.integration`):
+
 - `test_brave_search_returns_results` — real Brave API returns SearchResult list
 - `test_brave_search_has_extra_snippets` — at least some results have raw_content
 - `test_brave_search_deduplicates_by_url` — overlapping queries dedup by URL
@@ -372,32 +388,35 @@ async def get_search_tools(config: RunnableConfig | None = None) -> list:
 Ran the same query used in prior Tavily integration tests, with
 `search_api: "brave"`. Pipeline completed successfully.
 
-| Metric | Brave | Tavily (typical) |
-|--------|-------|-----------------|
-| Sources in store | 60 | ~50-70 |
-| Source IDs in notes | 40 | ~30-50 |
-| Citations in report | 165 | ~100-170 |
-| Report length | 33,925 chars | ~25,000-35,000 |
-| [unverified] marks | 0 | 0-3 |
-| Researchers | 5, all reached "sufficient" | Similar |
+
+| Metric              | Brave                       | Tavily (typical) |
+| ------------------- | --------------------------- | ---------------- |
+| Sources in store    | 60                          | ~50-70           |
+| Source IDs in notes | 40                          | ~30-50           |
+| Citations in report | 165                         | ~100-170         |
+| Report length       | 33,925 chars                | ~25,000-35,000   |
+| [unverified] marks  | 0                           | 0-3              |
+| Researchers         | 5, all reached "sufficient" | Similar          |
+
 
 Key observations:
+
 - **extra_snippets concatenation works well** — summarization LLM produced
-  structured summaries from the concatenated excerpts (compression ratios
-  11-25%, similar to Tavily's full-page summarization).
+structured summaries from the concatenated excerpts (compression ratios
+11-25%, similar to Tavily's full-page summarization).
 - **Cross-round dedup working** — "Source X already in store, skipping
-  summarization" messages appeared when researchers hit overlapping URLs.
+summarization" messages appeared when researchers hit overlapping URLs.
 - **No `pyproject.toml` change needed** — `httpx` is already available via
-  `tavily-python` dependency. No new package added.
+`tavily-python` dependency. No new package added.
 - **Report quality comparable to Tavily** — well-structured with headings,
-  specific data points, source citations throughout. The snippet-based
-  content was sufficient for the summarization pipeline.
+specific data points, source citations throughout. The snippet-based
+content was sufficient for the summarization pipeline.
 - **0 [unverified] marks** — suggests Brave's snippet-based content is
-  focused enough that the LLM doesn't hallucinate source IDs as often.
-  (Or this particular query produced fewer hallucination-prone claims.)
+focused enough that the LLM doesn't hallucinate source IDs as often.
+(Or this particular query produced fewer hallucination-prone claims.)
 - **Dead-end detection fired** — one researcher had `prior_gaps_filled=0`
-  at round 2, reformulation guidance injected, then filled 13 gaps in the
-  next round. The mechanism works across search providers as expected.
+at round 2, reformulation guidance injected, then filled 13 gaps in the
+next round. The mechanism works across search providers as expected.
 
 ---
 
@@ -412,6 +431,7 @@ fallback path (`raw_content=None` → skip summarization, use snippet directly)
 which Brave's extra_snippets mostly avoided.
 
 **Serper API details**:
+
 - **Endpoint**: `POST https://google.serper.dev/search`
 - **Auth**: `X-API-KEY` header
 - **Request**: JSON body `{"q": "query", "num": max_results}`
@@ -480,6 +500,7 @@ and use the snippet directly — testing the fallback path in `base.py:118-119`.
 #### 1b. `@tool` wrapper + Configuration + Registry
 
 Same pattern as Brave:
+
 ```python
 # configuration.py
 class SearchAPI(Enum):
@@ -500,14 +521,16 @@ if configurable.search_api == SearchAPI.SERPER:
 #### 1c. Tests
 
 **Unit** (`tests/test_serper_search.py`):
+
 - `test_serper_search_maps_results` — mock POST response → verify
-  `SearchResult` fields (`link` → `url`, `snippet` → `content`, `raw_content=None`)
+`SearchResult` fields (`link` → `url`, `snippet` → `content`, `raw_content=None`)
 - `test_serper_search_dedup_urls` — overlapping queries deduplicated
 - `test_serper_raw_content_always_none` — all results have `raw_content=None`
 
 **Integration** (`tests/test_serper_search.py`, `@pytest.mark.integration`):
+
 - `test_serper_search_and_summarize` — real Serper API → verify output uses
-  snippets directly (no summarization), has `[source_id]` tags
+snippets directly (no summarization), has `[source_id]` tags
 
 **End-to-end**: Run same quantum computing query with `search_api: "serper"`,
 compare report quality with Brave/Tavily traces in LangSmith.
@@ -527,57 +550,243 @@ we still have URL and title, which is all citation resolution needs.
 
 **End-to-end comparison** (quantum computing query, all three providers):
 
-| Metric | Tavily | Brave | Serper |
-|--------|--------|-------|--------|
-| Sources in store | ~50-70 | 60 | 157 |
-| Source IDs in notes | ~30-50 | 40 | 72 |
-| Citations in report | ~100-170 | 165 | 200 |
-| Report length | ~25-35k | 33,925 | 46,275 |
-| [unverified] marks | 0-3 | 0 | 0 |
-| Researchers hit max_iterations | ~0-1/5 | 0/5 | 5/6 |
-| Has ## Sources | Yes | Yes | Yes |
+
+| Metric                         | Tavily   | Brave  | Serper |
+| ------------------------------ | -------- | ------ | ------ |
+| Sources in store               | ~50-70   | 60     | 157    |
+| Source IDs in notes            | ~30-50   | 40     | 72     |
+| Citations in report            | ~100-170 | 165    | 200    |
+| Report length                  | ~25-35k  | 33,925 | 46,275 |
+| [unverified] marks             | 0-3      | 0      | 0      |
+| Researchers hit max_iterations | ~0-1/5   | 0/5    | 5/6    |
+| Has ## Sources                 | Yes      | Yes    | Yes    |
+
 
 Key observations:
+
 - **Serper has more sources (157)** — no summarization LLM call means faster
-  round-trips, so researchers do more searches within the same iteration budget.
+round-trips, so researchers do more searches within the same iteration budget.
 - **More researchers hit max_iterations (5/6)** — snippets have less depth per
-  result, so reflection keeps finding gaps and requesting more rounds. Brave and
-  Tavily provide richer per-result content, so researchers reach "sufficient"
-  earlier.
+result, so reflection keeps finding gaps and requesting more rounds. Brave and
+Tavily provide richer per-result content, so researchers reach "sufficient"
+earlier.
 - **Report quality is comparable** — despite snippet-only input, the report is
-  well-structured with citations. The researcher compensates by doing more
-  searches (breadth over depth).
+well-structured with citations. The researcher compensates by doing more
+searches (breadth over depth).
 - **Cross-round dedup working** — "Source X already in store, skipping
-  summarization" messages appeared frequently, confirming snippet-only sources
-  are properly stored and deduplicated.
+summarization" messages appeared frequently, confirming snippet-only sources
+are properly stored and deduplicated.
 - **Citation system fully functional** — 200 citations resolved, Sources section
-  present, 0 unverified marks.
+present, 0 unverified marks.
 
 ---
 
-### Step 2 — Model API key routing
+### Step 2 — Provider-agnostic model support ✅
 
-**Files**: `src/deep_research/configuration.py`, `src/deep_research/graph/model.py`
+**Goal**: Make the system work with any LLM provider (Google, Anthropic, OpenAI)
+by fixing provider-specific assumptions and centralizing model config building.
 
-Currently `init_chat_model` auto-reads env vars for model API keys. The gap:
-when users want to pass keys via config (e.g., LangGraph Platform deployment).
+**Files**: `src/deep_research/graph/model.py`, `src/deep_research/configuration.py`,
+all 9 node files that build `model_config` dicts, `pyproject.toml`.
 
-1. Add `api_key` resolution to `Configuration.from_runnable_config()`:
-   - Check env var by provider convention (already works for most cases)
-   - Allow override via `configurable.api_key` for deployment scenarios
+#### Research findings
 
-2. Update nodes that call `configurable_model.with_config()` to pass `api_key`
-   from the resolved config (currently only `model`, `max_tokens`, `temperature`,
-   `thinking_budget` are passed).
+**What already works** (via LangChain):
 
-3. Verify provider swapping works end-to-end:
-   - `google_genai:gemini-2.5-flash` (current default)
-   - `anthropic:claude-sonnet-4-20250514`
-   - `openai:gpt-4.1-mini`
+- `init_chat_model` with `configurable_fields` handles provider swapping — just
+change the model string (`google_genai:...` → `anthropic:...` → `openai:...`)
+- `with_structured_output` is provider-agnostic (LangChain maps to each
+provider's native structured output mechanism)
+- `with_retry`, `with_config` — provider-agnostic
 
-**Tests**:
-- Unit: Configuration resolves correct API key per provider prefix
-- Integration: Run brief generation with a non-default provider
+**Three gaps identified**:
+
+1. **Thinking/reasoning params are provider-specific** — our config has a single
+   `thinking_budget: int` but each provider uses a different field name and format:
+
+   | Provider | LangChain field | Format |
+   |----------|----------------|--------|
+   | Gemini (`google_genai:`) | `thinking_budget` | `thinking_budget=8192` (flat int) |
+   | Anthropic (`anthropic:`) | `thinking` | `thinking={"type": "enabled", "budget_tokens": 8192}` |
+   | OpenAI (`openai:`) | `reasoning` | `reasoning={"effort": "medium", "summary": "auto"}` |
+
+   Gemini and Anthropic both accept a token budget. OpenAI uses effort levels
+   (low/medium/high), not token counts — we map budget ranges to levels.
+
+   **Anthropic caveat**: Anthropic's API rejects forced tool use when thinking
+   is enabled. `langchain-anthropic` handles this by dropping `tool_choice` and
+   falling back to prompt-based structured output. Nodes using
+   `with_structured_output` (brief, clarify, reflect) may produce less reliable
+   structured output with thinking on Anthropic. Monitor in integration tests.
+
+   Currently passed in 9 files with copy-pasted `if not None` blocks:
+   - `nodes/brief.py` (research_model_thinking_budget)
+   - `nodes/clarify.py` (research_model_thinking_budget)
+   - `nodes/report.py` (research_model_thinking_budget)
+   - `nodes/researcher/researcher.py` (research_model_thinking_budget)
+   - `nodes/researcher/reflect.py` (reflection_thinking_budget)
+   - `nodes/researcher/summarizer.py` (summarization_model_thinking_budget)
+   - `nodes/coordinator/coordinator.py` (research_model_thinking_budget)
+   - `nodes/coordinator/reflect.py` (reflection_thinking_budget)
+   - `tools/search/base.py` (summarization_model_thinking_budget)
+
+2. **No API key routing by model prefix** — currently relies on env vars which
+   `init_chat_model` auto-reads. Works locally, but:
+   - No explicit routing (`google_genai:` → `GOOGLE_API_KEY`, etc.)
+   - Breaks in deployment where keys come from config, not env
+   - Reference implementation has `get_api_key_for_model()` with prefix detection
+
+3. **Missing LangChain provider packages** — `pyproject.toml` only has
+   `langchain-google-genai`. Need `langchain-anthropic` and `langchain-openai`
+   as optional dependencies.
+
+**What we're NOT doing**:
+- Provider-specific token limit detection — add reactively if observed
+- OpenAI `reasoning.summary` control — always set to `"auto"` for now
+
+#### Implementation substeps
+
+##### 2a. `build_model_config()` helper in `graph/model.py`
+
+Centralizes the 9 copy-pasted config-building blocks into one function.
+Lives in `graph/model.py` alongside `configurable_model` — this is provider
+logic, not configuration data:
+
+```python
+def build_model_config(
+    model: str,
+    max_tokens: int,
+    temperature: float,
+    thinking_budget: int | None = None,
+    api_key: str | None = None,
+) -> dict:
+    """Build a provider-aware model config dict.
+
+    Maps our unified thinking_budget to each provider's native format.
+    Routes api_key by provider prefix.
+    """
+    config = {"model": model, "max_tokens": max_tokens, "temperature": temperature}
+    if api_key:
+        config["api_key"] = api_key
+
+    # Map thinking_budget to provider-specific format
+    if thinking_budget is not None and thinking_budget > 0:
+        if model.startswith("google_genai:"):
+            config["thinking_budget"] = thinking_budget
+        elif model.startswith("anthropic:"):
+            config["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
+        elif model.startswith("openai:"):
+            # OpenAI uses effort levels, not token counts — map ranges
+            if thinking_budget <= 4096:
+                effort = "low"
+            elif thinking_budget <= 8192:
+                effort = "medium"
+            else:
+                effort = "high"
+            config["reasoning"] = {"effort": effort}
+    return config
+```
+
+Each node goes from 5+ lines to:
+
+```python
+model_config = build_model_config(
+    model=configurable.research_model,
+    max_tokens=configurable.research_model_max_tokens,
+    temperature=configurable.research_model_temperature,
+    thinking_budget=configurable.research_model_thinking_budget,
+)
+```
+
+##### 2b. `get_model_api_key()` in `graph/model.py`
+
+Resolves the right API key for a model string from env or config:
+
+```python
+def get_model_api_key(model: str) -> str | None:
+    """Get API key for a model by provider prefix."""
+    model = model.lower()
+    if model.startswith("openai:"):
+        return os.environ.get("OPENAI_API_KEY")
+    if model.startswith("anthropic:"):
+        return os.environ.get("ANTHROPIC_API_KEY")
+    if model.startswith("google_genai:"):
+        return os.environ.get("GOOGLE_API_KEY")
+    return None
+```
+
+Called by `build_model_config()` — when no explicit `api_key` is passed, auto-
+resolves from env by prefix. This is what `init_chat_model` already does
+internally, but being explicit lets us support config-based keys later.
+
+##### 2c. Update all 9 call sites
+
+Replace the 5-line config blocks in all node files with `build_model_config()`.
+No logic changes — purely mechanical replacement.
+
+Files to update:
+
+- `nodes/brief.py`
+- `nodes/clarify.py`
+- `nodes/report.py`
+- `nodes/researcher/researcher.py`
+- `nodes/researcher/reflect.py`
+- `nodes/researcher/summarizer.py`
+- `nodes/coordinator/coordinator.py`
+- `nodes/coordinator/reflect.py`
+- `tools/search/base.py`
+
+##### 2d. Update `configurable_fields` in `graph/model.py`
+
+Add the provider-specific thinking/reasoning fields so each provider's param
+can be passed through. `build_model_config()` only sets the one matching the
+current provider — the others default to None (no-op).
+
+```python
+configurable_model = init_chat_model(
+    configurable_fields=(
+        "model", "max_tokens", "api_key", "temperature",
+        "thinking_budget",  # Gemini
+        "thinking",         # Anthropic
+        "reasoning",        # OpenAI
+    ),
+)
+```
+
+##### 2e. Add optional provider dependencies to `pyproject.toml`
+
+```toml
+[project.optional-dependencies]
+anthropic = ["langchain-anthropic>=0.3"]
+openai = ["langchain-openai>=0.3"]
+all-providers = [
+    "langchain-anthropic>=0.3",
+    "langchain-openai>=0.3",
+]
+```
+
+Base install keeps only `langchain-google-genai`. Users install what they need:
+`pip install -e ".[anthropic]"` or `pip install -e ".[all-providers]"`.
+
+##### 2f. Tests
+
+**Unit** (`tests/test_model_config.py`):
+
+- `test_build_model_config_gemini` — maps to `thinking_budget=N`
+- `test_build_model_config_anthropic` — maps to `thinking={"type": "enabled", "budget_tokens": N}`
+- `test_build_model_config_openai_low` — budget ≤4096 → `reasoning={"effort": "low", ...}`
+- `test_build_model_config_openai_medium` — budget ≤8192 → `reasoning={"effort": "medium", ...}`
+- `test_build_model_config_openai_high` — budget >8192 → `reasoning={"effort": "high", ...}`
+- `test_build_model_config_no_thinking_budget` — None → no thinking/reasoning params
+- `test_build_model_config_zero_budget` — 0 → no thinking/reasoning params
+- `test_get_model_api_key_routing` — correct env var per prefix
+
+**Integration** (`scripts/test_provider_swap.py`):
+
+- Run brief generation with each provider — verify structured output works
+- `google_genai:gemini-2.5-flash` (current default)
+- `anthropic:claude-sonnet-4-20250514`
+- `openai:gpt-4.1-mini`
 
 ---
 
@@ -587,31 +796,29 @@ when users want to pass keys via config (e.g., LangGraph Platform deployment).
 `src/deep_research/graph/graph.py`
 
 1. Define progress event types:
-   ```python
+  ```python
    @dataclass
    class ProgressEvent:
        stage: str        # "brief", "research", "report"
        message: str      # user-friendly description
        detail: dict      # structured data (topic, round, knowledge_state, etc.)
-   ```
-
+  ```
 2. Implement `run_with_progress()` — async generator that wraps
-   `graph.astream_events(version="v2")` and yields `ProgressEvent`s:
-   - Map `on_chain_start/end` events by node name to progress messages
-   - Extract structured data from node outputs (brief title, researcher
-     topic, reflection round, knowledge_state)
-   - Filter noise — only surface events the user cares about
-
+  `graph.astream_events(version="v2")` and yields `ProgressEvent`s:
+  - Map `on_chain_start/end` events by node name to progress messages
+  - Extract structured data from node outputs (brief title, researcher
+  topic, reflection round, knowledge_state)
+  - Filter noise — only surface events the user cares about
 3. Add a simple console runner that consumes the generator:
-   ```python
+  ```python
    async for event in run_with_progress(query, config):
        print(f"[{event.stage}] {event.message}")
-   ```
-
+  ```
 4. Add `langgraph.json` for LangGraph Platform deployment (enables
-   LangGraph Studio web UI).
+  LangGraph Studio web UI).
 
 **Tests**:
+
 - Unit: event mapper produces correct ProgressEvent for each node type
 - Integration: full pipeline streams expected event sequence
 
@@ -622,30 +829,44 @@ when users want to pass keys via config (e.g., LangGraph Platform deployment).
 Run full end-to-end tests:
 
 1. **Search provider swap**: Run same query with Tavily and Brave, compare
-   report quality (does snippet-only fallback produce acceptable results?)
+  report quality (does snippet-only fallback produce acceptable results?)
 2. **Model provider swap**: Run brief generation with Gemini, Anthropic,
-   OpenAI — verify structured output works across providers
+  OpenAI — verify structured output works across providers
 3. **Progress streaming**: Verify complete event sequence for both simple
-   (single researcher) and complex (coordinator) queries
+  (single researcher) and complex (coordinator) queries
 4. **Graceful degradation**: Missing API key for non-default provider shows
-   clear error, not a cryptic traceback
+  clear error, not a cryptic traceback
 
 ---
 
 ## Files Changed
 
-| File | Change |
-|------|--------|
-| `src/deep_research/tools/search/brave.py` | BraveSearchTool — `search()` with extra_snippets concatenation |
-| `src/deep_research/tools/search/serper.py` | SerperSearchTool — `search()` snippet-only, raw_content=None |
-| `src/deep_research/tools/registry.py` | Route search tools by SearchAPI enum (TAVILY / BRAVE / SERPER) |
-| `src/deep_research/configuration.py` | Add `brave_api_key`, `serper_api_key`, enum values, API key routing |
-| `src/deep_research/progress.py` | Progress event types + astream wrapper |
-| `src/deep_research/graph/graph.py` | Expose builder for langgraph.json |
-| `langgraph.json` | LangGraph Platform deployment config |
-| `tests/test_brave_search.py` | Brave unit tests (mocked HTTP) + integration tests |
-| `tests/test_serper_search.py` | Serper unit tests (mocked HTTP) + integration tests |
-| `tests/test_progress.py` | Progress streaming tests |
+
+| File                                                 | Change                                                         |
+| ---------------------------------------------------- | -------------------------------------------------------------- |
+| `src/deep_research/tools/search/brave.py`            | BraveSearchTool — `search()` with extra_snippets concatenation |
+| `src/deep_research/tools/search/serper.py`           | SerperSearchTool — `search()` snippet-only, raw_content=None   |
+| `src/deep_research/tools/search/base.py`             | Fix source store write for snippet-only providers              |
+| `src/deep_research/tools/registry.py`                | Route search tools by SearchAPI enum (TAVILY / BRAVE / SERPER) |
+| `src/deep_research/configuration.py`                 | Search API keys, removed TODO for model config resolver        |
+| `src/deep_research/graph/model.py`                   | `build_model_config()`, `get_model_api_key()`, updated configurable_fields |
+| `src/deep_research/nodes/brief.py`                   | Use `build_model_config()`                                     |
+| `src/deep_research/nodes/clarify.py`                 | Use `build_model_config()`                                     |
+| `src/deep_research/nodes/report.py`                  | Use `build_model_config()`                                     |
+| `src/deep_research/nodes/researcher/researcher.py`   | Use `build_model_config()`                                     |
+| `src/deep_research/nodes/researcher/reflect.py`      | Use `build_model_config()`                                     |
+| `src/deep_research/nodes/researcher/summarizer.py`   | Use `build_model_config()`                                     |
+| `src/deep_research/nodes/coordinator/coordinator.py` | Use `build_model_config()`                                     |
+| `src/deep_research/nodes/coordinator/reflect.py`     | Use `build_model_config()`                                     |
+| `pyproject.toml`                                     | Optional `[anthropic]`, `[openai]`, `[all-providers]` deps     |
+| `src/deep_research/progress.py`                      | Progress event types + astream wrapper                         |
+| `src/deep_research/graph/graph.py`                   | Expose builder for langgraph.json                              |
+| `langgraph.json`                                     | LangGraph Platform deployment config                           |
+| `tests/test_brave_search.py`                         | Brave unit tests (mocked HTTP) + integration tests             |
+| `tests/test_serper_search.py`                        | Serper unit tests (mocked HTTP) + integration tests            |
+| `tests/test_model_config.py`                         | build_model_config + API key routing tests                     |
+| `tests/test_progress.py`                             | Progress streaming tests                                       |
+
 
 ## Not incorporated (rationale in Research section and scoping above)
 
@@ -654,3 +875,8 @@ Run full end-to-end tests:
 - **Two-tier notes** — no consumer, LangSmith covers debugging
 - **Token-limit retry** — not observed as a problem, add reactively
 - **Full CLI** — progress interface covers the real user need
+- **Provider-specific token limit detection** — reference has `MODEL_TOKEN_LIMITS` dict
+  that goes stale; add reactively if we observe token limit errors
+- **OpenAI `reasoning.summary` fine-tuning** — always `"auto"` for now; could expose
+  `"detailed"` or `None` as a config option later
+
