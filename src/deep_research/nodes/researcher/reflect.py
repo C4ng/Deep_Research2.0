@@ -22,14 +22,25 @@ logger = logging.getLogger(__name__)
 
 
 def _extract_tool_results(state: ResearcherState) -> str:
-    """Extract all ToolMessage content from messages.
+    """Extract this round's ToolMessage content from messages.
 
-    TODO(context): On round 2+, this includes prior rounds' tool results which
-    are redundant with accumulated_context. Filtering to only this round's results
-    would reduce context size but requires tracking message boundaries per round.
+    Only includes tool results after the last AIMessage with tool_calls,
+    which marks the start of the current round. Prior rounds' results are
+    already captured in accumulated_findings/accumulated_contradictions.
     """
+    messages = state.get("messages", [])
+
+    # Find the last AIMessage with tool_calls — that's this round's LLM call
+    last_ai_idx = -1
+    for i in range(len(messages) - 1, -1, -1):
+        if hasattr(messages[i], "tool_calls") and messages[i].tool_calls:
+            last_ai_idx = i
+            break
+
+    # Extract only ToolMessages after that boundary
+    current_round = messages[last_ai_idx + 1:] if last_ai_idx >= 0 else messages
     return "\n\n".join(
-        m.content for m in state.get("messages", [])
+        m.content for m in current_round
         if isinstance(m, ToolMessage) and m.content
     )
 

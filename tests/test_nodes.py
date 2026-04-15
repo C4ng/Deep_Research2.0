@@ -117,9 +117,9 @@ async def test_tool_registry_returns_tools():
 
 
 def test_extract_tool_results(researcher_state):
-    """Extracts content from ToolMessages, skips others."""
+    """Extracts content from ToolMessages after the last AI tool call."""
     researcher_state["messages"] = [
-        HumanMessage(content="search for X"),
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
         ToolMessage(content="Result A", name="tavily_search", tool_call_id="1"),
         ToolMessage(content="Result B", name="tavily_search", tool_call_id="2"),
         ToolMessage(content="", name="tavily_search", tool_call_id="3"),
@@ -128,6 +128,21 @@ def test_extract_tool_results(researcher_state):
     assert "Result A" in result
     assert "Result B" in result
     assert result.count("Result") == 2  # empty ToolMessage skipped
+
+
+def test_extract_tool_results_current_round_only(researcher_state):
+    """On round 2+, only extracts this round's tool results, not prior rounds'."""
+    researcher_state["messages"] = [
+        # Round 1
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "1"}]),
+        ToolMessage(content="Old result from round 1", name="tavily_search", tool_call_id="1"),
+        # Round 2
+        AIMessage(content="", tool_calls=[{"name": "search", "args": {}, "id": "2"}]),
+        ToolMessage(content="New result from round 2", name="tavily_search", tool_call_id="2"),
+    ]
+    result = _extract_tool_results(researcher_state)
+    assert "New result from round 2" in result
+    assert "Old result from round 1" not in result
 
 
 def test_format_reflection_with_all_fields():

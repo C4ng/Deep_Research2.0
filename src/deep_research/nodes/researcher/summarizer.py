@@ -84,7 +84,6 @@ async def summarize_research(state: ResearcherState, config: RunnableConfig) -> 
     compressed = response.text or ""
 
     if not compressed:
-        # TODO(fallback): LLM returned empty — fall back to raw tool results
         logger.warning("Compression returned empty, falling back to raw tool results")
         return {"notes": tool_results}
 

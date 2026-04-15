@@ -209,6 +209,16 @@ src/deep_research/
 
 **Thinking budget exhaustion on large context**: Gemini's reasoning tokens consumed the entire output budget when prior search results accumulated in messages (~60k chars). Fixed by trimming prior AI/Tool messages on subsequent rounds. Expanding model budgets (max_tokens=16384, thinking_budget=8192) provided additional headroom.
 
+**Reflection received redundant tool results (fixed in Increment 8)**:
+`_extract_tool_results()` originally extracted ALL ToolMessages from state,
+including prior rounds' results that were already captured in
+`accumulated_findings`. On round 2+, the reflection prompt saw both the
+accumulated context AND the raw tool results from round 1 — redundant and
+wasteful. Fixed by finding the last `AIMessage` with `tool_calls` (which marks
+the current round's LLM call) and only extracting ToolMessages after that
+boundary. Prior rounds' knowledge is already in `accumulated_findings` /
+`accumulated_contradictions`.
+
 **Model batches queries in tool calls**: The `tavily_search` tool accepts `queries: List[str]`, so the model sends 3-4 queries per tool call. One tool call = multiple searches. The prompt limit "up to N search calls" maps to tool invocations, not individual queries.
 
 ## TODOs

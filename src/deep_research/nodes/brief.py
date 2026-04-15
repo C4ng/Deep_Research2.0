@@ -90,11 +90,6 @@ async def write_research_brief(
         )
 
     # User approved or review disabled — proceed to research
-    # TODO: Consider whether downstream nodes (researcher, report) should also
-    # receive the original user messages alongside the brief. The brief is the
-    # model's structured interpretation — it may lose nuance, tone, or implicit
-    # constraints from the original question (e.g., audience, perspective, depth).
-    # For now, researcher uses only the brief for context isolation (Increment 3).
     next_node = "researcher" if brief.is_simple else "coordinator"
     logger.info("Proceeding to %s", next_node)
     return Command(
