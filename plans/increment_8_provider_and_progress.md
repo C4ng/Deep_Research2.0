@@ -608,10 +608,20 @@ provider's native structured output mechanism)
    |----------|----------------|--------|
    | Gemini (`google_genai:`) | `thinking_budget` | `thinking_budget=8192` (flat int) |
    | Anthropic (`anthropic:`) | `thinking` | `thinking={"type": "enabled", "budget_tokens": 8192}` |
-   | OpenAI (`openai:`) | `reasoning` | `reasoning={"effort": "medium", "summary": "auto"}` |
+   | OpenAI o-series (`openai:o*`) | `reasoning` | `reasoning={"effort": "medium"}` |
+   | OpenAI standard (`openai:gpt-*`) | — | No reasoning support |
 
    Gemini and Anthropic both accept a token budget. OpenAI uses effort levels
    (low/medium/high), not token counts — we map budget ranges to levels.
+   Standard OpenAI models (gpt-4.1, gpt-4o) don't support reasoning at all.
+
+   **OpenAI o-series caveat**: reasoning models (o1, o3, o4-mini) reject
+   `temperature` — they control randomness via reasoning effort instead.
+   `build_model_config()` detects o-series models via `_is_openai_reasoning_model()`
+   (model name after prefix starts with "o" + digit) and drops temperature.
+
+   **OpenAI `reasoning.summary` caveat**: requires org verification on OpenAI.
+   Dropped from defaults to avoid blocking unverified accounts.
 
    **Anthropic caveat**: Anthropic's API rejects forced tool use when thinking
    is enabled. `langchain-anthropic` handles this by dropping `tool_choice` and
@@ -619,16 +629,8 @@ provider's native structured output mechanism)
    `with_structured_output` (brief, clarify, reflect) may produce less reliable
    structured output with thinking on Anthropic. Monitor in integration tests.
 
-   Currently passed in 9 files with copy-pasted `if not None` blocks:
-   - `nodes/brief.py` (research_model_thinking_budget)
-   - `nodes/clarify.py` (research_model_thinking_budget)
-   - `nodes/report.py` (research_model_thinking_budget)
-   - `nodes/researcher/researcher.py` (research_model_thinking_budget)
-   - `nodes/researcher/reflect.py` (reflection_thinking_budget)
-   - `nodes/researcher/summarizer.py` (summarization_model_thinking_budget)
-   - `nodes/coordinator/coordinator.py` (research_model_thinking_budget)
-   - `nodes/coordinator/reflect.py` (reflection_thinking_budget)
-   - `tools/search/base.py` (summarization_model_thinking_budget)
+   Was previously copy-pasted in 9 files with `if not None` blocks — now
+   centralized in `build_model_config()`.
 
 2. **No API key routing by model prefix** — currently relies on env vars which
    `init_chat_model` auto-reads. Works locally, but:
@@ -642,7 +644,7 @@ provider's native structured output mechanism)
 
 **What we're NOT doing**:
 - Provider-specific token limit detection — add reactively if observed
-- OpenAI `reasoning.summary` control — always set to `"auto"` for now
+- OpenAI `reasoning.summary` — requires org verification, dropped for now
 
 #### Implementation substeps
 
@@ -653,6 +655,11 @@ Lives in `graph/model.py` alongside `configurable_model` — this is provider
 logic, not configuration data:
 
 ```python
+def _is_openai_reasoning_model(model: str) -> bool:
+    """o-series (o1, o3, o4-mini) — reject temperature, support reasoning."""
+    name = model.removeprefix("openai:").lower()
+    return len(name) >= 2 and name[0] == "o" and name[1].isdigit()
+
 def build_model_config(
     model: str,
     max_tokens: int,
@@ -660,14 +667,15 @@ def build_model_config(
     thinking_budget: int | None = None,
     api_key: str | None = None,
 ) -> dict:
-    """Build a provider-aware model config dict.
+    resolved_key = api_key or get_model_api_key(model)
+    config = {"model": model, "max_tokens": max_tokens}
+    if resolved_key:
+        config["api_key"] = resolved_key
 
-    Maps our unified thinking_budget to each provider's native format.
-    Routes api_key by provider prefix.
-    """
-    config = {"model": model, "max_tokens": max_tokens, "temperature": temperature}
-    if api_key:
-        config["api_key"] = api_key
+    # OpenAI o-series rejects temperature
+    is_o_series = model.startswith("openai:") and _is_openai_reasoning_model(model)
+    if not is_o_series:
+        config["temperature"] = temperature
 
     # Map thinking_budget to provider-specific format
     if thinking_budget is not None and thinking_budget > 0:
@@ -675,15 +683,10 @@ def build_model_config(
             config["thinking_budget"] = thinking_budget
         elif model.startswith("anthropic:"):
             config["thinking"] = {"type": "enabled", "budget_tokens": thinking_budget}
-        elif model.startswith("openai:"):
-            # OpenAI uses effort levels, not token counts — map ranges
-            if thinking_budget <= 4096:
-                effort = "low"
-            elif thinking_budget <= 8192:
-                effort = "medium"
-            else:
-                effort = "high"
+        elif is_o_series:
+            effort = "low" if thinking_budget <= 4096 else "medium" if thinking_budget <= 8192 else "high"
             config["reasoning"] = {"effort": effort}
+        # openai standard models (gpt-*): no reasoning support, skip
     return config
 ```
 
@@ -770,23 +773,32 @@ Base install keeps only `langchain-google-genai`. Users install what they need:
 
 ##### 2f. Tests
 
-**Unit** (`tests/test_model_config.py`):
+**Unit** (`tests/test_model_config.py`) — 32 tests, all pass:
 
-- `test_build_model_config_gemini` — maps to `thinking_budget=N`
-- `test_build_model_config_anthropic` — maps to `thinking={"type": "enabled", "budget_tokens": N}`
-- `test_build_model_config_openai_low` — budget ≤4096 → `reasoning={"effort": "low", ...}`
-- `test_build_model_config_openai_medium` — budget ≤8192 → `reasoning={"effort": "medium", ...}`
-- `test_build_model_config_openai_high` — budget >8192 → `reasoning={"effort": "high", ...}`
-- `test_build_model_config_no_thinking_budget` — None → no thinking/reasoning params
-- `test_build_model_config_zero_budget` — 0 → no thinking/reasoning params
-- `test_get_model_api_key_routing` — correct env var per prefix
+- `TestIsOpenAIReasoningModel` (8 tests) — o1/o3/o4-mini detected, gpt-4.1/gpt-4o not
+- `TestBuildModelConfigThinking` (9 tests) — Gemini/Anthropic/OpenAI o-series mapping,
+  GPT ignores thinking_budget, None/0 excluded, unknown provider skipped
+- `TestBuildModelConfigTemperature` (5 tests) — present for Gemini/Anthropic/GPT,
+  excluded for o-series
+- `TestBuildModelConfigBase` (4 tests) — base fields, explicit/auto-resolved API key
+- `TestGetModelApiKey` (6 tests) — prefix routing, case insensitive, missing env var
 
-**Integration** (`scripts/test_provider_swap.py`):
+**Integration** (`scripts/test_provider_swap.py`) — live API calls:
 
-- Run brief generation with each provider — verify structured output works
-- `google_genai:gemini-2.5-flash` (current default)
-- `anthropic:claude-sonnet-4-20250514`
-- `openai:gpt-4.1-mini`
+| Provider | Model | Structured Output | Thinking/Reasoning | Result |
+|----------|-------|-------------------|--------------------|--------|
+| Gemini | `gemini-2.5-flash` | PASS | `thinking_budget=8192` | PASS (3.1s) |
+| OpenAI | `gpt-4.1-mini` | PASS | N/A (non-reasoning) | PASS (3.4s) |
+| OpenAI | `o4-mini` | PASS | `reasoning={"effort": "medium"}` | PASS (5.9s) |
+| Anthropic | `claude-sonnet-4` | — | `thinking={budget_tokens: 8192}` | Pending (credits) |
+
+**Issues found and fixed during testing**:
+1. OpenAI o-series rejects `temperature` — added `_is_openai_reasoning_model()`
+   to detect and skip temperature for o-series models.
+2. OpenAI `reasoning.summary` requires org verification — dropped from defaults.
+3. Standard GPT models don't support `reasoning` — only map for o-series.
+
+**Commit**: `f073998`
 
 ---
 
@@ -864,7 +876,8 @@ Run full end-to-end tests:
 | `langgraph.json`                                     | LangGraph Platform deployment config                           |
 | `tests/test_brave_search.py`                         | Brave unit tests (mocked HTTP) + integration tests             |
 | `tests/test_serper_search.py`                        | Serper unit tests (mocked HTTP) + integration tests            |
-| `tests/test_model_config.py`                         | build_model_config + API key routing tests                     |
+| `tests/test_model_config.py`                         | 32 tests: thinking mapping, temperature, API key routing       |
+| `scripts/test_provider_swap.py`                      | Live API test for Gemini, Anthropic, OpenAI GPT + o-series     |
 | `tests/test_progress.py`                             | Progress streaming tests                                       |
 
 
@@ -877,6 +890,6 @@ Run full end-to-end tests:
 - **Full CLI** — progress interface covers the real user need
 - **Provider-specific token limit detection** — reference has `MODEL_TOKEN_LIMITS` dict
   that goes stale; add reactively if we observe token limit errors
-- **OpenAI `reasoning.summary` fine-tuning** — always `"auto"` for now; could expose
-  `"detailed"` or `None` as a config option later
+- **OpenAI `reasoning.summary`** — requires org verification, dropped from defaults;
+  can re-add once verified
 
