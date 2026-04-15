@@ -7,6 +7,7 @@ registered here, not hardcoded in nodes.
 from langchain_core.runnables import RunnableConfig
 
 from deep_research.configuration import Configuration, SearchAPI
+from deep_research.tools.search.brave import brave_search
 from deep_research.tools.search.tavily import tavily_search
 
 
@@ -16,6 +17,8 @@ async def get_search_tools(config: RunnableConfig | None = None) -> list:
 
     if configurable.search_api == SearchAPI.TAVILY:
         return [tavily_search]
+    if configurable.search_api == SearchAPI.BRAVE:
+        return [brave_search]
 
     return []
 
