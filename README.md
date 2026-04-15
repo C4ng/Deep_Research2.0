@@ -55,6 +55,11 @@ ANTHROPIC_API_KEY=your-key
 OPENAI_API_KEY=your-key
 BRAVE_API_KEY=your-key
 SERPER_API_KEY=your-key
+
+# Optional: LangSmith tracing (traces every LLM call, tool call, and node execution)
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=your-key
+LANGSMITH_PROJECT=deep-research
 ```
 
 ### Running
